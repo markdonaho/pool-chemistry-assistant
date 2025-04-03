@@ -1,4 +1,4 @@
-# Pool & Cold Plunge Chemistry Assistant v1.0
+# Pool & Cold Plunge Chemistry Assistant v1.2
 from datetime import datetime
 import csv
 import curses
@@ -32,13 +32,24 @@ systems = {
 
 # Chemical rates (grams per gallon to change by 1 unit)
 rates = {
-    "Total Hardness": {"up": 15 / 100, "down": 0},  # 15g/100gal = 0.15g/gal for 25 ppm
-    "Total Chlorine": {"up": 2.5 / 100, "down": 0},  # 2.5g/100gal, no reduction
-    "Free Chlorine": {"up": 2.5 / 100, "down": 0},  # Same, no reduction
-    "Bromine": {"up": 0, "down": 0},
-    "Total Alkalinity": {"up": 15 / 100, "down": 0},  # 15g/100gal = 0.15g/gal for 25 ppm
-    "Cyanuric Acid": {"up": 0, "down": 0},
-    "pH": {"up": 5 / 100 / 0.2, "down": 5 / 100 / 0.2}  # 5g/100gal per 0.2 pH
+    "cold_plunge": {
+        "Total Hardness": {"up": 15 / 100, "down": 0},  # SpaGuard Calcium Hardness Increaser
+        "Total Chlorine": {"up": 2.5 / 100, "down": 0},  # SpaGuard Chlorinating Concentrate
+        "Free Chlorine": {"up": 2.5 / 100, "down": 0},   # Same
+        "Bromine": {"up": 0, "down": 0},
+        "Total Alkalinity": {"up": 15 / 100, "down": 0},  # SpaGuard Total Alkalinity Increaser
+        "Cyanuric Acid": {"up": 0, "down": 0},
+        "pH": {"up": 5 / 100 / 0.2, "down": 5 / 100 / 0.2}  # SpaGuard pH Increaser/Decreaser
+    },
+    "pool": {
+        "Total Hardness": {"up": 0.0068, "down": 0},  # Clorox Pool & Spa Alkalinity Increaser (used for hardness in some contexts, no specific hardness increaser listed)
+        "Total Chlorine": {"up": 0.004, "down": 0},   # HTH 3" Chlorine Tabs
+        "Free Chlorine": {"up": 0.004, "down": 0},    # HTH 3" Chlorine Tabs
+        "Bromine": {"up": 0, "down": 0},              # No chemical provided
+        "Total Alkalinity": {"up": 0.0068, "down": 0},  # Clorox Pool & Spa Alkalinity Increaser
+        "Cyanuric Acid": {"up": 0.0453, "down": 0},   # Pool Mate Stabilizer & Conditioner
+        "pH": {"up": 0.425, "down": 0.0525}          # Pool Mate pH Up / Clorox Pool & Spa pH Down
+    }
 }
 
 def calculate_adjustment(current, target, volume, rate_up, rate_down, field):
@@ -48,12 +59,11 @@ def calculate_adjustment(current, target, volume, rate_up, rate_down, field):
         direction = "up"
         chemical = f"{field} Increaser" if "pH" not in field else "pH Increaser"
         if "Chlorine" in field:
-            chemical = "Chlorinating Concentrate"
+            chemical = "Chlorinating Concentrate"  # Update for pool later
     elif difference < 0:  # Decrease
         adjustment = -difference * volume * rate_down
         direction = "down"
         chemical = f"{field} Reducer" if "pH" not in field else "pH Decreaser"
-        # No Enhanced Shock for chlorine reduction here
     else:
         return 0, None, None
     return adjustment, direction, chemical
@@ -103,6 +113,7 @@ system = curses.wrapper(menu)
 volume = systems[system]["volume"]
 targets = systems[system]["targets"]
 fields = list(targets.keys())
+system_rates = rates[system]  # Select rates based on system
 
 # Collect data
 print(f"\nEntering data for {system} (default volume: {volume} gallons)")
@@ -124,9 +135,8 @@ needs_shock = False
 shock_amount = 0
 for field in fields:
     adjustment = calculate_adjustment(current[field], targets[field], volume, 
-                                     rates[field]["up"], rates[field]["down"], field)
+                                     system_rates[field]["up"], system_rates[field]["down"], field)
     if adjustment and "Chlorine" in field and adjustment[1] == "down":
-        # Track shock separately, don’t assign to field yet
         needs_shock = True
         shock_amount = max(shock_amount, (28 / 500) * volume)  # 28g/500gal base dose
     else:
