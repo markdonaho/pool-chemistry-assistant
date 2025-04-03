@@ -1,6 +1,5 @@
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
-const cors = require("cors")({origin: true});
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -83,65 +82,68 @@ function calculateAdjustment(current, target, volume, rateUp, rateDown, field) {
   }
 }
 
-exports.systems = functions.https.onRequest((req, res) => {
-  cors(req, res, () => {
-    res.json(systems);
-  });
+exports.systems = functions.https.onCall((data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError("unauthenticated", "Auth required");
+  }
+  return systems;
 });
 
-exports.calculate = functions.https.onRequest((req, res) => {
-  cors(req, res, async () => {
-    if (req.method !== "POST") {
-      return res.status(405).send("Method Not Allowed");
-    }
+exports.calculate = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError("unauthenticated", "Auth required");
+  }
+  if (!data.system || !data.current) {
+    throw new functions.https.HttpsError(
+        "invalid-argument", "System readings required");
+  }
 
-    const {system, current} = req.body;
-    const volume = systems[system].volume;
-    const targets = systems[system].targets;
-    const systemRates = rates[system];
+  const {system, current} = data;
+  const volume = systems[system].volume;
+  const targets = systems[system].targets;
+  const systemRates = rates[system];
 
-    const adjustments = {};
-    let needsShock = false;
-    let shockAmount = 0;
+  const adjustments = {};
+  let needsShock = false;
+  let shockAmount = 0;
 
-    for (const field in targets) {
-      if (Object.prototype.hasOwnProperty.call(targets, field)) {
-        const adj = calculateAdjustment(
-            current[field],
-            targets[field],
-            volume,
-            systemRates[field].up,
-            systemRates[field].down,
-            field,
-        );
-        if (adj && field.includes("Chlorine") && adj[1] === "down") {
-          needsShock = true;
-          shockAmount = Math.max(shockAmount, (28 / 500) * volume);
-          adjustments[field] = [0, null, null];
-        } else {
-          adjustments[field] = adj[0] !== 0 ? adj : [0, null, null];
-        }
+  for (const field in targets) {
+    if (Object.prototype.hasOwnProperty.call(targets, field)) {
+      const adj = calculateAdjustment(
+          current[field],
+          targets[field],
+          volume,
+          systemRates[field].up,
+          systemRates[field].down,
+          field,
+      );
+      if (adj && field.includes("Chlorine") && adj[1] === "down") {
+        needsShock = true;
+        shockAmount = Math.max(shockAmount, (28 / 500) * volume);
+        adjustments[field] = [0, null, null];
+      } else {
+        adjustments[field] = adj[0] !== 0 ? adj : [0, null, null];
       }
     }
+  }
 
-    // Save to Firestore
-    await db.collection("readings").add({
-      date: new Date().toISOString().split("T")[0],
-      system,
-      volume,
-      ...Object.fromEntries(
-          Object.keys(targets).flatMap((field) => [
-            [`${field}_current`, current[field]],
-            [`${field}_target`, targets[field]],
-            [`${field}_adjust`, adjustments[field][0]],
-          ]),
-      ),
-    });
-
-    const response = {adjustments};
-    if (needsShock) {
-      response.shock = {amount: shockAmount, chemical: "Enhanced Shock"};
-    }
-    res.json(response);
+  // Save to Firestore
+  await db.collection("readings").add({
+    date: new Date().toISOString().split("T")[0],
+    system,
+    volume,
+    ...Object.fromEntries(
+        Object.keys(targets).flatMap((field) => [
+          [`${field}_current`, current[field]],
+          [`${field}_target`, targets[field]],
+          [`${field}_adjust`, adjustments[field][0]],
+        ]),
+    ),
   });
+
+  const response = {adjustments};
+  if (needsShock) {
+    response.shock = {amount: shockAmount, chemical: "Enhanced Shock"};
+  }
+  return response;
 });
