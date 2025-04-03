@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import axios from 'axios';
 import './App.css';
 
@@ -18,10 +18,15 @@ function Picker({ value, onChange, target }) {
     minValue = Math.max(0, target * 0.5); // Start at 50% of target
     maxValue = target * 2; // Allow up to 200% of target
   }
-  const values = [];
-  for (let i = minValue; i <= maxValue; i += increment) {
-    values.push(parseFloat(i.toFixed(1)));
-  }
+
+  // Use useMemo to memoize the values array
+  const values = useMemo(() => {
+    const vals = [];
+    for (let i = minValue; i <= maxValue; i += increment) {
+      vals.push(parseFloat(i.toFixed(1)));
+    }
+    return vals;
+  }, [minValue, maxValue, increment]); // Dependencies that affect the values array
 
   // Find the closest value to the current value
   const closestValue = values.reduce((prev, curr) =>
@@ -97,10 +102,12 @@ function App() {
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const SYSTEMS_URL = "https://systems-pjfngl6oca-uc.a.run.app";
+  const CALCULATE_URL = "https://calculate-pjfngl6oca-uc.a.run.app"
 
   // Fetch systems data on mount and when system changes
   useEffect(() => {
-    axios.get('http://127.0.0.1:5000/systems')
+    axios.get(SYSTEMS_URL)
       .then(res => {
         setSystemsData(res.data);
         const targets = res.data[system].targets;
@@ -117,7 +124,7 @@ function App() {
     setLoading(true);
     setError(null);
     setResults(null);
-    axios.post('http://127.0.0.1:5000/calculate', { system, current })
+    axios.post(CALCULATE_URL, { system, current })
       .then(res => {
         setResults(res.data);
         setLoading(false);
