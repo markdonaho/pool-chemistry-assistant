@@ -82,7 +82,7 @@ function calculateAdjustment(current, target, volume, rateUp, rateDown, field) {
   }
 }
 
-exports.systems = functions.https.onCall((data, context) => {
+exports.systems = functions.https.onCall(async (data, context) => {
   if (!context.auth) {
     throw new functions.https.HttpsError("unauthenticated", "Auth required");
   }

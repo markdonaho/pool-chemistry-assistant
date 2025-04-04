@@ -1,39 +1,36 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import axios from 'axios';
+import { functions, httpsCallable, auth } from './index';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import Auth from './Auth';
 import './App.css';
 
 function Picker({ value, onChange, target }) {
   const [isOpen, setIsOpen] = useState(false);
-  const [selectedValue, setSelectedValue] = useState(value); // Track the scrolled value locally
+  const [selectedValue, setSelectedValue] = useState(value);
   const pickerRef = useRef(null);
 
-  // Determine the range and increment based on the target
   const increment = target >= 100 ? 5 : target >= 10 ? 1 : 0.1;
   let minValue, maxValue;
   if (target === 0) {
-    // Special case for target = 0 (e.g., Cyanuric Acid in cold_plunge)
     minValue = 0;
-    maxValue = 10; // Allow scrolling up to 10
+    maxValue = 10;
   } else {
-    minValue = Math.max(0, target * 0.5); // Start at 50% of target
-    maxValue = target * 2; // Allow up to 200% of target
+    minValue = Math.max(0, target * 0.5);
+    maxValue = target * 2;
   }
 
-  // Use useMemo to memoize the values array
   const values = useMemo(() => {
     const vals = [];
     for (let i = minValue; i <= maxValue; i += increment) {
       vals.push(parseFloat(i.toFixed(1)));
     }
     return vals;
-  }, [minValue, maxValue, increment]); // Dependencies that affect the values array
+  }, [minValue, maxValue, increment]);
 
-  // Find the closest value to the current value
   const closestValue = values.reduce((prev, curr) =>
     Math.abs(curr - value) < Math.abs(prev - value) ? curr : prev
   );
 
-  // Scroll to the selected value when the picker opens
   useEffect(() => {
     if (isOpen && pickerRef.current) {
       const itemHeight = 40;
@@ -46,26 +43,26 @@ function Picker({ value, onChange, target }) {
 
   const handleScroll = (e) => {
     const container = e.target;
-    const itemHeight = 40; // Height of each item in the picker
+    const itemHeight = 40;
     const index = Math.round(container.scrollTop / itemHeight);
     const newValue = values[index] || closestValue;
-    setSelectedValue(newValue); // Update local state as the user scrolls
+    setSelectedValue(newValue);
   };
 
   const handleSelect = (val) => {
-    onChange(val); // Update the parent state with the selected value
-    setIsOpen(false); // Close the picker
+    onChange(val);
+    setIsOpen(false);
   };
 
   const handleOutsideClick = (e) => {
     if (e.target.classList.contains('picker-modal')) {
-      setIsOpen(false); // Close the picker without saving
+      setIsOpen(false);
     }
   };
 
   const togglePicker = () => {
     setIsOpen(!isOpen);
-    setSelectedValue(value); // Reset to the current value when opening
+    setSelectedValue(value);
   };
 
   return (
@@ -96,42 +93,61 @@ function Picker({ value, onChange, target }) {
 }
 
 function App() {
+  const [user, setUser] = useState(null);
   const [system, setSystem] = useState('cold_plunge');
   const [systemsData, setSystemsData] = useState(null);
   const [current, setCurrent] = useState({});
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const SYSTEMS_URL = "https://systems-pjfngl6oca-uc.a.run.app";
-  const CALCULATE_URL = "https://calculate-pjfngl6oca-uc.a.run.app"
 
-  // Fetch systems data on mount and when system changes
+  // Monitor authentication state
   useEffect(() => {
-    axios.get(SYSTEMS_URL)
-      .then(res => {
-        setSystemsData(res.data);
-        const targets = res.data[system].targets;
-        // Initialize current readings with the target value
-        setCurrent(Object.fromEntries(Object.keys(targets).map(k => [k, targets[k]])));
-      })
-      .catch(err => {
-        console.error('Error fetching systems:', err);
-        setError('Failed to load system data. Please try again later.');
-      });
-  }, [system]);
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      setUser(currentUser);
+      if (currentUser) {
+        // Force token refresh and log it for debugging
+        const token = await currentUser.getIdToken(true);
+        console.log('User authenticated, ID token:', token);
+      } else {
+        console.log('No user authenticated');
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Fetch systems data when user is authenticated
+  useEffect(() => {
+    if (user) {
+      console.log('Fetching systems data for user:', user.uid);
+      const getSystems = httpsCallable(functions, 'systems');
+      getSystems()
+        .then((result) => {
+          console.log('Systems data fetched:', result.data);
+          setSystemsData(result.data);
+          const targets = result.data[system].targets;
+          setCurrent(Object.fromEntries(Object.keys(targets).map(k => [k, targets[k]])));
+        })
+        .catch((err) => {
+          console.error("Error fetching systems:", err);
+          setError("Failed to load system data. Please try again later.");
+        });
+    }
+  }, [system, user]);
 
   const handleSubmit = () => {
     setLoading(true);
     setError(null);
     setResults(null);
-    axios.post(CALCULATE_URL, { system, current })
-      .then(res => {
-        setResults(res.data);
+    const calculate = httpsCallable(functions, 'calculate');
+    calculate({ system, current })
+      .then((result) => {
+        setResults(result.data);
         setLoading(false);
       })
-      .catch(err => {
-        console.error('Error calculating:', err);
-        setError('Failed to calculate adjustments. Please try again.');
+      .catch((err) => {
+        console.error("Error calculating:", err);
+        setError("Failed to calculate adjustments. Please try again.");
         setLoading(false);
       });
   };
@@ -140,12 +156,34 @@ function App() {
     setCurrent({ ...current, [field]: parseFloat(value) });
   };
 
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      setSystemsData(null);
+      setCurrent({});
+      setResults(null);
+      setError(null);
+    } catch (err) {
+      setError("Failed to log out. Please try again.");
+    }
+  };
+
+  // Show login/signup page if not authenticated
+  if (!user) {
+    return <Auth onLogin={(user) => setUser(user)} />;
+  }
+
+  // Show loading or error states
   if (error) return <div className="error">{error}</div>;
   if (!systemsData) return <div className="loading">Loading...</div>;
 
+  // Main app content for authenticated users
   return (
-    <div className="App">
-      <h1>Pool & Cold Plunge Chemistry Assistant</h1>
+    <div className="App $($)">
+      <div className="header">
+        <h1>Pool & Cold Plunge Chemistry Assistant</h1>
+        <button onClick={handleLogout} className="logout-button">Log Out</button>
+      </div>
       <div className="system-selector">
         <label>Select System: </label>
         <select value={system} onChange={e => setSystem(e.target.value)}>
