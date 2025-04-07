@@ -39,6 +39,7 @@ function App() {
         setSystemsData(null);
         setAdjustments(null);
         setReadings([]);
+        setError(null);
       }
     });
     return () => unsubscribe();
@@ -46,8 +47,8 @@ function App() {
 
   useEffect(() => {
     if (user) {
-      console.log("Fetching systems data for user:", user.uid);
-      user.getIdToken(true).then((token) => {
+      user.getIdToken().then((token) => {
+        // Fetch systems
         fetch("https://us-central1-poolchemistryassistant.cloudfunctions.net/systems", {
           method: "POST",
           headers: {
@@ -58,7 +59,9 @@ function App() {
         })
           .then((response) => {
             if (!response.ok) {
-              throw new Error(`HTTP error! status: ${response.status}`);
+              return response.text().then((text) => {
+                throw new Error(`HTTP error! status: ${response.status}, body: ${text}`);
+              });
             }
             return response.json();
           })
@@ -69,17 +72,11 @@ function App() {
             setCurrent(Object.fromEntries(Object.keys(targets).map((k) => [k, targets[k]])));
           })
           .catch((err) => {
-            console.error("Error fetching systems:", err);
+            console.error("Error fetching systems:", err.message);
             setError("Failed to load system data. Please try again later.");
           });
-      });
-    }
-  }, [system, user]);
 
-  useEffect(() => {
-    if (user) {
-      console.log("Fetching readings for user:", user.uid);
-      user.getIdToken(true).then((token) => {
+        // Fetch readings
         fetch("https://us-central1-poolchemistryassistant.cloudfunctions.net/getReadings", {
           method: "GET",
           headers: {
@@ -88,21 +85,23 @@ function App() {
         })
           .then((response) => {
             if (!response.ok) {
-              throw new Error(`HTTP error! status: ${response.status}`);
+              return response.text().then((text) => {
+                throw new Error(`HTTP error! status: ${response.status}, body: ${text}`);
+              });
             }
             return response.json();
           })
           .then((result) => {
             console.log("Readings fetched:", result.readings);
-            setReadings(result.readings);
+            setReadings(result.readings || []);
           })
           .catch((err) => {
-            console.error("Error fetching readings:", err);
+            console.error("Error fetching readings:", err.message);
             setError("Failed to load readings. Please try again later.");
           });
       });
     }
-  }, [user]);
+  }, [user, system]);
 
   const handleLogin = (e) => {
     e.preventDefault();
@@ -112,21 +111,27 @@ function App() {
         setError(null);
       })
       .catch((err) => {
+        console.error("Login error:", err.message);
         setError("Login failed. Please check your credentials.");
-        console.error(err);
       });
   };
 
   const handleLogout = () => {
     signOut(auth)
-      .then(() => setUser(null))
-      .catch((err) => console.error("Logout failed:", err));
+      .then(() => {
+        setUser(null);
+        setError(null);
+      })
+      .catch((err) => {
+        console.error("Logout error:", err.message);
+        setError("Logout failed. Please try again.");
+      });
   };
 
   const handleCalculate = (e) => {
     e.preventDefault();
     if (user) {
-      user.getIdToken(true).then((token) => {
+      user.getIdToken().then((token) => {
         fetch("https://us-central1-poolchemistryassistant.cloudfunctions.net/calculate", {
           method: "POST",
           headers: {
@@ -137,7 +142,9 @@ function App() {
         })
           .then((response) => {
             if (!response.ok) {
-              throw new Error(`HTTP error! status: ${response.status}`);
+              return response.text().then((text) => {
+                throw new Error(`HTTP error! status: ${response.status}, body: ${text}`);
+              });
             }
             return response.json();
           })
@@ -146,7 +153,7 @@ function App() {
             setAdjustments(result);
           })
           .catch((err) => {
-            console.error("Error calculating adjustments:", err);
+            console.error("Error calculating adjustments:", err.message);
             setError("Failed to calculate adjustments. Please try again.");
           });
       });
@@ -158,20 +165,26 @@ function App() {
       <div className="App">
         <h1>Pool Chemistry Assistant</h1>
         <form onSubmit={handleLogin}>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="Email"
-            required
-          />
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Password"
-            required
-          />
+          <div>
+            <label>Email:</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Email"
+              required
+            />
+          </div>
+          <div>
+            <label>Password:</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Password"
+              required
+            />
+          </div>
           <button type="submit">Login</button>
         </form>
         {error && <p className="error">{error}</p>}
@@ -231,7 +244,7 @@ function App() {
             <div key={reading.id}>
               <p>Date: {reading.date}</p>
               <p>System: {reading.system}</p>
-              {Object.keys(systems[reading.system].targets).map((field) => (
+              {systemsData && Object.keys(systemsData[reading.system].targets).map((field) => (
                 <p key={field}>
                   {field}: Current {reading[`${field}_current`]}, Target {reading[`${field}_target`]}, Adjust {reading[`${field}_adjust`]}
                 </p>
