@@ -1,2 +1,4 @@
 Date,Volume,Target Total Hardness,Target Total Chlorine,Target Free Chlorine,Target Total Alkalinity,Target Cyanuric Acid,Target pH,Current Total Hardness,Current Total Chlorine,Current Free Chlorine,Current Total Alkalinity,Current Cyanuric Acid,Current pH,Adjust Total Hardness,Adjust Total Chlorine,Adjust Free Chlorine,Adjust Total Alkalinity,Adjust Cyanuric Acid,Adjust pH
 2025-04-03,15000,300,3,3,100,40,7.4,120.0,5.0,5.0,120.0,0.0,6.8,18360.0,0,0,0.0,27180.0,3825.000000000003
+2025-04-06,15000,300,3,3,100,40,7.4,250.0,3.0,3.0,80.0,25.0,7.2,5100.0,0,0,2040.0,10192.5,1275.0000000000011
+2025-04-06,15000,300,3,3,100,40,7.4,120.0,1.0,0.0,120.0,30.0,7.4,18360.0,120.0,180.0,0.0,6795.0,0

@@ -1,4 +1,3 @@
-# Pool & Cold Plunge Chemistry Assistant v1.2
 from datetime import datetime
 import csv
 import curses
@@ -30,25 +29,25 @@ systems = {
     }
 }
 
-# Chemical rates (grams per gallon to change by 1 unit)
+# Chemical rates (grams per gallon to change by 1 unit) - unchanged from your original
 rates = {
     "cold_plunge": {
-        "Total Hardness": {"up": 15 / 100, "down": 0},  # SpaGuard Calcium Hardness Increaser
-        "Total Chlorine": {"up": 2.5 / 100, "down": 0},  # SpaGuard Chlorinating Concentrate
-        "Free Chlorine": {"up": 2.5 / 100, "down": 0},   # Same
+        "Total Hardness": {"up": 15 / 100, "down": 0},  # 0.15 g/gal per 1 ppm
+        "Total Chlorine": {"up": 2.5 / 100, "down": 0},  # 0.025 g/gal per 1 ppm
+        "Free Chlorine": {"up": 2.5 / 100, "down": 0},   # 0.025 g/gal per 1 ppm
         "Bromine": {"up": 0, "down": 0},
-        "Total Alkalinity": {"up": 15 / 100, "down": 0},  # SpaGuard Total Alkalinity Increaser
+        "Total Alkalinity": {"up": 15 / 100, "down": 0},  # 0.15 g/gal per 1 ppm
         "Cyanuric Acid": {"up": 0, "down": 0},
-        "pH": {"up": 5 / 100 / 0.2, "down": 5 / 100 / 0.2}  # SpaGuard pH Increaser/Decreaser
+        "pH": {"up": 5 / 100 / 0.2, "down": 5 / 100 / 0.2}  # 0.25 g/gal per 0.2 pH units
     },
     "pool": {
-        "Total Hardness": {"up": 0.0068, "down": 0},  # Clorox Pool & Spa Alkalinity Increaser (used for hardness in some contexts, no specific hardness increaser listed)
-        "Total Chlorine": {"up": 0.004, "down": 0},   # HTH 3" Chlorine Tabs
-        "Free Chlorine": {"up": 0.004, "down": 0},    # HTH 3" Chlorine Tabs
-        "Bromine": {"up": 0, "down": 0},              # No chemical provided
-        "Total Alkalinity": {"up": 0.0068, "down": 0},  # Clorox Pool & Spa Alkalinity Increaser
-        "Cyanuric Acid": {"up": 0.0453, "down": 0},   # Pool Mate Stabilizer & Conditioner
-        "pH": {"up": 0.425, "down": 0.0525}          # Pool Mate pH Up / Clorox Pool & Spa pH Down
+        "Total Hardness": {"up": 0.0068, "down": 0},
+        "Total Chlorine": {"up": 0.004, "down": 0},
+        "Free Chlorine": {"up": 0.004, "down": 0},
+        "Bromine": {"up": 0, "down": 0},
+        "Total Alkalinity": {"up": 0.0068, "down": 0},
+        "Cyanuric Acid": {"up": 0.0453, "down": 0},
+        "pH": {"up": 0.425, "down": 0.0525}
     }
 }
 
@@ -59,7 +58,7 @@ def calculate_adjustment(current, target, volume, rate_up, rate_down, field):
         direction = "up"
         chemical = f"{field} Increaser" if "pH" not in field else "pH Increaser"
         if "Chlorine" in field:
-            chemical = "Chlorinating Concentrate"  # Update for pool later
+            chemical = "Chlorinating Concentrate"
     elif difference < 0:  # Decrease
         adjustment = -difference * volume * rate_down
         direction = "down"
@@ -80,7 +79,7 @@ def save_to_file(system, data, targets, current, adjustments):
     
     with open(filename, "a", newline="") as f:
         writer = csv.writer(f)
-        if f.tell() == 0:
+        if f.tell() == 0:  # Write headers if file is empty
             writer.writerow(headers)
         writer.writerow(row)
 
@@ -113,7 +112,7 @@ system = curses.wrapper(menu)
 volume = systems[system]["volume"]
 targets = systems[system]["targets"]
 fields = list(targets.keys())
-system_rates = rates[system]  # Select rates based on system
+system_rates = rates[system]
 
 # Collect data
 print(f"\nEntering data for {system} (default volume: {volume} gallons)")
@@ -127,7 +126,12 @@ for field, target in targets.items():
 current = {}
 print("\nEnter current readings:")
 for field in fields:
-    current[field] = float(input(f"Current {field} (target: {targets[field]}): "))
+    while True:
+        try:
+            current[field] = float(input(f"Current {field} (target: {targets[field]}): "))
+            break
+        except ValueError:
+            print("Please enter a valid number.")
 
 # Calculate adjustments
 adjustments = {}
@@ -139,18 +143,18 @@ for field in fields:
     if adjustment and "Chlorine" in field and adjustment[1] == "down":
         needs_shock = True
         shock_amount = max(shock_amount, (28 / 500) * volume)  # 28g/500gal base dose
+        adjustments[field] = (0, None, None)  # No adjustment, just shock
     else:
-        adjustments[field] = adjustment
+        adjustments[field] = adjustment if adjustment != (0, None, None) else (0, None, None)
 
 # Display adjustments
 print("\nAdjustments:")
 for field in fields:
-    if field in adjustments:
-        amount, direction, chemical = adjustments[field] if adjustments[field] != (0, None, None) else (0, None, None)
-        if amount != 0:
-            print(f"Add {amount:.2f}g of {chemical}")
-        elif direction is None:
-            print(f"{field} is on target")
+    amount, direction, chemical = adjustments[field]
+    if amount != 0:
+        print(f"Add {amount:.2f}g of {chemical}")
+    elif direction is None:
+        print(f"{field} is on target")
 if needs_shock:
     print(f"Add {shock_amount:.2f}g of Enhanced Shock (midweek treatment)")
 
