@@ -226,6 +226,60 @@ button:disabled {
   background-color: #c82333;
 }
 
+.App {
+  text-align: center;
+  padding: 20px;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.error {
+  color: red;
+}
+
+.readings-card {
+  margin-top: 20px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  padding: 10px;
+  background-color: #f9f9f9;
+}
+
+.toggle-button {
+  background-color: #007bff;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 5px;
+  cursor: pointer;
+  margin-bottom: 10px;
+}
+
+.toggle-button:hover {
+  background-color: #0056b3;
+}
+
+.readings-content {
+  text-align: left;
+}
+
+.reading-item {
+  border-bottom: 1px solid #eee;
+  padding: 10px 0;
+}
+
+.reading-item:last-child {
+  border-bottom: none;
+}
+
+form div {
+  margin-bottom: 15px;
+}
+
+button {
+  margin: 5px;
+}
+
 /* Mobile-specific adjustments */
 @media (max-width: 600px) {
   .App {

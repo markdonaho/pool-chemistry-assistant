@@ -4,7 +4,9 @@ import {
   getAuth,
   onAuthStateChanged,
   signInWithEmailAndPassword,
+  createUserWithEmailAndPassword, // New import
   signOut,
+  sendEmailVerification,
 } from "firebase/auth";
 import "./App.css";
 
@@ -31,6 +33,8 @@ function App() {
   const [current, setCurrent] = useState({});
   const [adjustments, setAdjustments] = useState(null);
   const [readings, setReadings] = useState([]);
+  const [showReadings, setShowReadings] = useState(false);
+  const [isSignUp, setIsSignUp] = useState(false); // New state to toggle between login and sign-up
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -40,6 +44,7 @@ function App() {
         setAdjustments(null);
         setReadings([]);
         setError(null);
+        setShowReadings(false);
       }
     });
     return () => unsubscribe();
@@ -47,8 +52,12 @@ function App() {
 
   useEffect(() => {
     if (user) {
+      if (!user.emailVerified) {
+        setError("Please verify your email to use the app. Check your inbox for a verification link.");
+        return;
+      }
+
       user.getIdToken().then((token) => {
-        // Fetch systems
         fetch("https://us-central1-poolchemistryassistant.cloudfunctions.net/systems", {
           method: "POST",
           headers: {
@@ -76,7 +85,6 @@ function App() {
             setError("Failed to load system data. Please try again later.");
           });
 
-        // Fetch readings
         fetch("https://us-central1-poolchemistryassistant.cloudfunctions.net/getReadings", {
           method: "GET",
           headers: {
@@ -109,10 +117,41 @@ function App() {
       .then((userCredential) => {
         setUser(userCredential.user);
         setError(null);
+        if (!userCredential.user.emailVerified) {
+          sendEmailVerification(userCredential.user)
+            .then(() => {
+              setError("Verification email sent. Please check your inbox.");
+            })
+            .catch((err) => {
+              console.error("Error sending verification email:", err.message);
+              setError("Failed to send verification email. Please try again.");
+            });
+        }
       })
       .catch((err) => {
         console.error("Login error:", err.message);
         setError("Login failed. Please check your credentials.");
+      });
+  };
+
+  const handleSignUp = (e) => {
+    e.preventDefault();
+    createUserWithEmailAndPassword(auth, email, password)
+      .then((userCredential) => {
+        setUser(userCredential.user);
+        setError(null);
+        sendEmailVerification(userCredential.user)
+          .then(() => {
+            setError("Account created! Verification email sent. Please check your inbox.");
+          })
+          .catch((err) => {
+            console.error("Error sending verification email:", err.message);
+            setError("Failed to send verification email. Please try again.");
+          });
+      })
+      .catch((err) => {
+        console.error("Sign-up error:", err.message);
+        setError("Sign-up failed. " + err.message);
       });
   };
 
@@ -160,11 +199,16 @@ function App() {
     }
   };
 
+  const toggleReadings = () => {
+    setShowReadings(!showReadings);
+  };
+
   if (!user) {
     return (
       <div className="App">
         <h1>Pool Chemistry Assistant</h1>
-        <form onSubmit={handleLogin}>
+        <h2>{isSignUp ? "Sign Up" : "Login"}</h2>
+        <form onSubmit={isSignUp ? handleSignUp : handleLogin}>
           <div>
             <label>Email:</label>
             <input
@@ -185,8 +229,22 @@ function App() {
               required
             />
           </div>
-          <button type="submit">Login</button>
+          <button type="submit">{isSignUp ? "Sign Up" : "Login"}</button>
         </form>
+        <button onClick={() => setIsSignUp(!isSignUp)}>
+          {isSignUp ? "Already have an account? Login" : "Need an account? Sign Up"}
+        </button>
+        {error && <p className="error">{error}</p>}
+      </div>
+    );
+  }
+
+  if (!user.emailVerified) {
+    return (
+      <div className="App">
+        <h1>Pool Chemistry Assistant</h1>
+        <p>Please verify your email to use the app. Check your inbox for a verification link.</p>
+        <button onClick={handleLogout}>Logout</button>
         {error && <p className="error">{error}</p>}
       </div>
     );
@@ -238,19 +296,26 @@ function App() {
         </div>
       )}
       {readings.length > 0 && (
-        <div>
-          <h2>Recent Readings</h2>
-          {readings.map((reading) => (
-            <div key={reading.id}>
-              <p>Date: {reading.date}</p>
-              <p>System: {reading.system}</p>
-              {systemsData && Object.keys(systemsData[reading.system].targets).map((field) => (
-                <p key={field}>
-                  {field}: Current {reading[`${field}_current`]}, Target {reading[`${field}_target`]}, Adjust {reading[`${field}_adjust`]}
-                </p>
+        <div className="readings-card">
+          <button onClick={toggleReadings} className="toggle-button">
+            {showReadings ? "Hide Recent Readings" : "Show Recent Readings"}
+          </button>
+          {showReadings && (
+            <div className="readings-content">
+              <h2>Recent Readings</h2>
+              {readings.map((reading) => (
+                <div key={reading.id} className="reading-item">
+                  <p>Date: {reading.date}</p>
+                  <p>System: {reading.system}</p>
+                  {systemsData && Object.keys(systemsData[reading.system].targets).map((field) => (
+                    <p key={field}>
+                      {field}: Current {reading[`${field}_current`]}, Target {reading[`${field}_target`]}, Adjust {reading[`${field}_adjust`]}
+                    </p>
+                  ))}
+                </div>
               ))}
             </div>
-          ))}
+          )}
         </div>
       )}
     </div>

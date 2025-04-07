@@ -52,11 +52,14 @@ const rates = {
   },
 };
 
+
+// Missing JSDoc comment
 /**
- * Validates the Firebase ID token from the Authorization header.
- * @param {string} authHeader - The Authorization header.
- * @return {Promise<string>} - The user's UID if valid.
- * @throws {Error} - If the token is invalid or missing.
+ * Validate the Firebase ID token from the Authorization header.
+ *
+ * @param {string} authHeader - The Auth header with the Bearer token.
+ * @return {Promise<string>} The user ID if the token is valid.
+ * @throws {Error} If the token is invalid or missing.
  */
 async function validateToken(authHeader) {
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -71,16 +74,18 @@ async function validateToken(authHeader) {
   }
 }
 
+
+// Missing JSDoc comment
 /**
- * Calculates adjustment for a given field based on current and target values.
- * @param {number} current - The current value.
- * @param {number} target - The target value.
+ * Calculate adjustment for a specific field using current and target values.
+ *
+ * @param {number} current - The current value of the field.
+ * @param {number} target - The target value of the field.
  * @param {number} volume - The volume of the system.
- * @param {number} rateUp - The rate of increase.
- * @param {number} rateDown - The rate of decrease.
- * @param {string} field - The field name.
- * @return {[number, string, string]} - An array containing the adjust amount,
- *                                      direction (up/down), and chemical name.
+ * @param {number} rateUp - The rate of increase for the field.
+ * @param {number} rateDown - The rate of decrease for the field.
+ * @param {string} field - The name of the field being adjusted.
+ * @return {[number, string, string]} Array amount, direction and chemical type.
  */
 function calculateAdjustment(current, target, volume, rateUp, rateDown, field) {
   const difference = target - current;
@@ -196,10 +201,9 @@ exports.getReadings = functions.https.onRequest((req, res) => {
     }
 
     try {
-      const uid = await validateToken(req.headers.authorization);
+      await validateToken(req.headers.authorization);
       const readingsSnapshot = await admin.firestore()
           .collection("readings")
-          .where("userId", "==", uid)
           .orderBy("date", "desc")
           .limit(10)
           .get();
