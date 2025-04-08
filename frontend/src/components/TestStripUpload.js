@@ -12,12 +12,13 @@ const TestStripUpload = () => {
   const [processedFile, setProcessedFile] = useState(null);
   const [showManualInput, setShowManualInput] = useState(false);
   const [manualReadings, setManualReadings] = useState({
-    pH: '',
+    'Total Hardness': '',
     'Total Chlorine': '',
     'Free Chlorine': '',
-    'Total Hardness': '',
+    'Bromine': '',
     'Total Alkalinity': '',
-    'Cyanuric Acid': ''
+    'Cyanuric Acid': '',
+    'pH': ''
   });
 
   const handleFileChange = async (e) => {
@@ -217,12 +218,13 @@ const TestStripUpload = () => {
               setShowManualInput(false);
               setError(null);
               setManualReadings({
-                pH: '',
+                'Total Hardness': '',
                 'Total Chlorine': '',
                 'Free Chlorine': '',
-                'Total Hardness': '',
+                'Bromine': '',
                 'Total Alkalinity': '',
-                'Cyanuric Acid': ''
+                'Cyanuric Acid': '',
+                'pH': ''
               });
             }}
             className="switch-mode-button"

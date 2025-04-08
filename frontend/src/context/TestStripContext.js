@@ -13,37 +13,76 @@ export const TestStripProvider = ({ children }) => {
 
   // Color key for test strip readings
   const colorKey = {
-    "pH": [
-      { color: [255, 182, 193], value: 6.8 }, // Light pink
-      { color: [255, 105, 180], value: 7.2 }, // Hot pink
-      { color: [148, 0, 211], value: 7.6 }    // Purple
+    "Total Hardness": [
+      { color: [86, 107, 87], value: 0 },      // Dark olive
+      { color: [122, 93, 95], value: 25 },     // Mauve
+      { color: [130, 95, 96], value: 50 },     // Darker mauve
+      { color: [142, 98, 98], value: 120 },    // Reddish brown
+      { color: [175, 108, 108], value: 250 },  // Light reddish brown
+      { color: [189, 112, 112], value: 425 }   // Pink brown
     ],
     "Total Chlorine": [
-      { color: [255, 255, 224], value: 0 },   // Light yellow
-      { color: [255, 215, 0], value: 3 }      // Gold
+      { color: [255, 253, 218], value: 0 },    // Pale yellow
+      { color: [244, 246, 194], value: 0.5 },  // Light yellow-green
+      { color: [226, 234, 181], value: 1 },    // Yellow-green
+      { color: [201, 221, 156], value: 3 },    // Light green
+      { color: [176, 208, 157], value: 5 },    // Mint green
+      { color: [86, 190, 167], value: 10 },    // Turquoise
+      { color: [68, 183, 168], value: 20 }     // Dark turquoise
     ],
-    "Total Hardness": [
-      { color: [255, 255, 255], value: 0 },   // White
-      { color: [192, 192, 192], value: 250 }  // Silver
+    "Free Chlorine": [
+      { color: [255, 255, 255], value: 0 },    // White
+      { color: [255, 235, 238], value: 0.5 },  // Very light pink
+      { color: [255, 214, 220], value: 1 },    // Light pink
+      { color: [232, 145, 189], value: 3 },    // Medium pink
+      { color: [201, 105, 157], value: 5 },    // Dark pink
+      { color: [169, 91, 131], value: 10 },    // Purple pink
+      { color: [142, 77, 112], value: 20 }     // Dark purple pink
+    ],
+    "Bromine": [
+      { color: [255, 255, 255], value: 0 },    // White
+      { color: [255, 235, 238], value: 1 },    // Very light pink
+      { color: [232, 145, 189], value: 2 },    // Light pink
+      { color: [201, 105, 157], value: 6 },    // Medium pink
+      { color: [169, 91, 131], value: 10 },    // Dark pink
+      { color: [142, 77, 112], value: 20 },    // Purple pink
+      { color: [120, 65, 95], value: 40 }      // Dark purple pink
     ],
     "Total Alkalinity": [
-      { color: [255, 255, 255], value: 0 },   // White
-      { color: [192, 192, 192], value: 80 }   // Silver
+      { color: [255, 244, 187], value: 0 },    // Light yellow
+      { color: [199, 237, 183], value: 40 },   // Light green
+      { color: [134, 197, 154], value: 80 },   // Medium green
+      { color: [86, 158, 118], value: 120 },   // Forest green
+      { color: [53, 128, 112], value: 180 },   // Dark green
+      { color: [41, 100, 98], value: 240 },    // Very dark green
+      { color: [33, 85, 85], value: 360 }      // Darkest green
     ],
     "Cyanuric Acid": [
-      { color: [255, 255, 255], value: 0 },   // White
-      { color: [192, 192, 192], value: 30 }   // Silver
+      { color: [255, 200, 180], value: 0 },    // Light peach
+      { color: [255, 190, 175], value: 30 },   // Peach
+      { color: [255, 180, 170], value: 100 },  // Dark peach
+      { color: [255, 170, 165], value: 150 },  // Pink peach
+      { color: [255, 160, 160], value: 240 }   // Pink
+    ],
+    "pH": [
+      { color: [255, 183, 159], value: 6.2 },  // Light orange
+      { color: [255, 167, 147], value: 6.8 },  // Orange
+      { color: [255, 152, 136], value: 7.2 },  // Dark orange
+      { color: [255, 136, 124], value: 7.8 },  // Red orange
+      { color: [255, 120, 113], value: 8.4 },  // Red
+      { color: [255, 105, 105], value: 9.0 }   // Dark red
     ]
   };
 
   // Square positions (relative to image dimensions)
   const squarePositions = {
-    "pH": { x: 0.5, y: 0.1 },
-    "Total Chlorine": { x: 0.5, y: 0.3 },
-    "Free Chlorine": { x: 0.5, y: 0.5 },
-    "Total Hardness": { x: 0.5, y: 0.7 },
-    "Total Alkalinity": { x: 0.5, y: 0.85 },
-    "Cyanuric Acid": { x: 0.5, y: 0.95 }
+    "Total Hardness": { x: 0.5, y: 0.07 },
+    "Total Chlorine": { x: 0.5, y: 0.21 },
+    "Free Chlorine": { x: 0.5, y: 0.35 },
+    "Bromine": { x: 0.5, y: 0.49 },
+    "Total Alkalinity": { x: 0.5, y: 0.63 },
+    "Cyanuric Acid": { x: 0.5, y: 0.77 },
+    "pH": { x: 0.5, y: 0.91 }
   };
 
   const processImage = async (imageFile) => {

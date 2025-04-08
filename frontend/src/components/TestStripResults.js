@@ -1,12 +1,26 @@
 import React, { useEffect, useState } from 'react';
 import { useTestStrip } from '../context/TestStripContext';
 import { useNavigate } from 'react-router-dom';
+import { getAuth } from 'firebase/auth';
 
 const TestStripResults = () => {
   const { image, detectedReadings, adjustments, setAdjustments, error } = useTestStrip();
   const [isCalculating, setIsCalculating] = useState(false);
   const [calculationError, setCalculationError] = useState(null);
+  const [localImageUrl, setLocalImageUrl] = useState(null);
   const navigate = useNavigate();
+  const auth = getAuth();
+
+  // Handle image URL
+  useEffect(() => {
+    if (image instanceof Blob) {
+      const url = URL.createObjectURL(image);
+      setLocalImageUrl(url);
+      return () => URL.revokeObjectURL(url);
+    } else if (typeof image === 'string') {
+      setLocalImageUrl(image);
+    }
+  }, [image]);
 
   useEffect(() => {
     if (!detectedReadings) {
@@ -19,10 +33,12 @@ const TestStripResults = () => {
       setCalculationError(null);
 
       try {
+        const token = await auth.currentUser.getIdToken();
         const response = await fetch('https://us-central1-poolchemistryassistant.cloudfunctions.net/calculate', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
           },
           body: JSON.stringify({
             system: 'pool',
@@ -46,7 +62,7 @@ const TestStripResults = () => {
     };
 
     calculateAdjustments();
-  }, [detectedReadings, setAdjustments, navigate]);
+  }, [detectedReadings, setAdjustments, navigate, auth]);
 
   if (error) {
     return (
@@ -60,13 +76,20 @@ const TestStripResults = () => {
     );
   }
 
+  const renderAdjustmentValue = (value) => {
+    if (typeof value === 'object') {
+      return JSON.stringify(value);
+    }
+    return value;
+  };
+
   return (
     <div className="test-strip-results">
       <h2>Test Strip Results</h2>
 
-      {image && (
+      {localImageUrl && (
         <div className="result-image">
-          <img src={image} alt="Processed test strip" />
+          <img src={localImageUrl} alt="Processed test strip" />
         </div>
       )}
 
@@ -83,7 +106,7 @@ const TestStripResults = () => {
             {detectedReadings && Object.entries(detectedReadings).map(([parameter, value]) => (
               <tr key={parameter}>
                 <td>{parameter}</td>
-                <td>{value}</td>
+                <td>{renderAdjustmentValue(value)}</td>
               </tr>
             ))}
           </tbody>
@@ -113,10 +136,10 @@ const TestStripResults = () => {
               </tr>
             </thead>
             <tbody>
-              {Object.entries(adjustments).map(([chemical, amount]) => (
+              {Object.entries(adjustments).map(([chemical, adjustment]) => (
                 <tr key={chemical}>
                   <td>{chemical}</td>
-                  <td>{amount}</td>
+                  <td>{renderAdjustmentValue(adjustment)}</td>
                   <td>oz</td>
                 </tr>
               ))}
