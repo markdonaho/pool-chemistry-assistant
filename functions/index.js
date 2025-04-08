@@ -75,7 +75,6 @@ async function validateToken(authHeader) {
 }
 
 
-// Missing JSDoc comment
 /**
  * Calculate adjustment for a specific field using current and target values.
  *
