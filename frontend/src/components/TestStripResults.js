@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useTestStrip } from '../context/TestStripContext';
 import { useNavigate } from 'react-router-dom';
 import { getAuth } from 'firebase/auth';
+import config from '../config';
 
 const TestStripResults = () => {
   const { image, detectedReadings, adjustments, setAdjustments, error } = useTestStrip();
@@ -10,17 +11,6 @@ const TestStripResults = () => {
   const [localImageUrl, setLocalImageUrl] = useState(null);
   const navigate = useNavigate();
   const auth = getAuth();
-
-  // Handle image URL
-  useEffect(() => {
-    if (image instanceof Blob) {
-      const url = URL.createObjectURL(image);
-      setLocalImageUrl(url);
-      return () => URL.revokeObjectURL(url);
-    } else if (typeof image === 'string') {
-      setLocalImageUrl(image);
-    }
-  }, [image]);
 
   useEffect(() => {
     if (!detectedReadings) {
@@ -34,7 +24,7 @@ const TestStripResults = () => {
 
       try {
         const token = await auth.currentUser.getIdToken();
-        const response = await fetch('https://us-central1-poolchemistryassistant.cloudfunctions.net/calculate', {
+        const response = await fetch(`${config.apiUrl}${config.endpoints.calculate}`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -64,6 +54,75 @@ const TestStripResults = () => {
     calculateAdjustments();
   }, [detectedReadings, setAdjustments, navigate, auth]);
 
+  const formatAdjustment = (adjustment) => {
+    // Handle shock treatment object
+    if (typeof adjustment === 'object' && adjustment !== null && 'amount' in adjustment && 'chemical' in adjustment) {
+      return `Add ${adjustment.amount.toFixed(1)} oz of ${adjustment.chemical}`;
+    }
+
+    // Handle regular chemical adjustments array
+    if (Array.isArray(adjustment)) {
+      const [amount, direction, chemical] = adjustment;
+      if (amount === 0) return "No adjustment needed";
+      if (!direction) return "No adjustment needed";
+      return `${direction === 'up' ? 'Add' : 'Reduce'} ${Math.abs(amount).toFixed(1)} oz of ${chemical}`;
+    }
+
+    // If the adjustment is an object with numeric properties (like pH, Total Alkalinity, etc.)
+    if (typeof adjustment === 'object' && adjustment !== null) {
+      // Extract the values from the object - we expect [amount, direction, chemical]
+      const values = Object.values(adjustment);
+      if (values.length === 3) {
+        const [amount, direction, chemical] = values;
+        if (amount === 0) return "No adjustment needed";
+        if (!direction) return "No adjustment needed";
+        return `${direction === 'up' ? 'Add' : 'Reduce'} ${Math.abs(amount).toFixed(1)} oz of ${chemical}`;
+      }
+    }
+
+    // Fallback for any other format
+    return "Unable to process adjustment";
+  };
+
+  const getRecommendationClass = (adjustment) => {
+    // Handle shock treatment object
+    if (typeof adjustment === 'object' && adjustment !== null && 'amount' in adjustment) {
+      return adjustment.amount === 0 ? 'no-change' : 'needs-adjustment';
+    }
+
+    // Handle regular chemical adjustments array
+    if (Array.isArray(adjustment)) {
+      const [amount] = adjustment;
+      return amount === 0 ? 'no-change' : 'needs-adjustment';
+    }
+
+    // Handle object with numeric properties
+    if (typeof adjustment === 'object' && adjustment !== null) {
+      const values = Object.values(adjustment);
+      if (values.length > 0) {
+        const amount = values[0];
+        return amount === 0 ? 'no-change' : 'needs-adjustment';
+      }
+    }
+
+    return '';
+  };
+
+  // Handle image URL
+  useEffect(() => {
+    if (!image) return;
+    
+    if (image instanceof Blob) {
+      const url = URL.createObjectURL(image);
+      setLocalImageUrl(url);
+      return () => {
+        if (url) URL.revokeObjectURL(url);
+      };
+    } else if (typeof image === 'string') {
+      setLocalImageUrl(image);
+    }
+  }, [image]);
+
   if (error) {
     return (
       <div className="test-strip-results">
@@ -75,13 +134,6 @@ const TestStripResults = () => {
       </div>
     );
   }
-
-  const renderAdjustmentValue = (value) => {
-    if (typeof value === 'object') {
-      return JSON.stringify(value);
-    }
-    return value;
-  };
 
   return (
     <div className="test-strip-results">
@@ -106,7 +158,7 @@ const TestStripResults = () => {
             {detectedReadings && Object.entries(detectedReadings).map(([parameter, value]) => (
               <tr key={parameter}>
                 <td>{parameter}</td>
-                <td>{renderAdjustmentValue(value)}</td>
+                <td>{value}</td>
               </tr>
             ))}
           </tbody>
@@ -125,27 +177,36 @@ const TestStripResults = () => {
           </button>
         </div>
       ) : adjustments ? (
-        <div className="adjustments">
-          <h3>Recommended Adjustments</h3>
-          <table>
-            <thead>
-              <tr>
-                <th>Chemical</th>
-                <th>Amount</th>
-                <th>Unit</th>
-              </tr>
-            </thead>
-            <tbody>
-              {Object.entries(adjustments).map(([chemical, adjustment]) => (
-                <tr key={chemical}>
-                  <td>{chemical}</td>
-                  <td>{renderAdjustmentValue(adjustment)}</td>
-                  <td>oz</td>
+        <>
+          <div className="adjustments">
+            <h3>Recommended Chemical Adjustments</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>Parameter</th>
+                  <th>Recommendation</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {Object.entries(adjustments)
+                  .filter(([chemical]) => chemical !== 'shock')
+                  .map(([parameter, adjustment]) => (
+                    <tr key={parameter} className={getRecommendationClass(adjustment)}>
+                      <td>{parameter}</td>
+                      <td>{formatAdjustment(adjustment)}</td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+
+          {adjustments.shock && (
+            <div className="shock-treatment">
+              <h3>Shock Treatment Needed</h3>
+              <p>{formatAdjustment(adjustments.shock)}</p>
+            </div>
+          )}
+        </>
       ) : null}
 
       <div className="actions">
