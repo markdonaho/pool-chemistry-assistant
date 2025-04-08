@@ -620,3 +620,82 @@ button:disabled {
     margin: 5px 0;
   }
 }
+
+/* Manual Input Styles */
+.manual-input-container {
+  margin: 20px 0;
+  padding: 20px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+}
+
+.manual-input-container h3 {
+  margin-top: 0;
+  margin-bottom: 20px;
+  color: #333;
+}
+
+.manual-input-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 15px;
+  margin-bottom: 20px;
+}
+
+.manual-input-grid .input-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.manual-input-grid label {
+  margin-bottom: 5px;
+  font-weight: 500;
+  color: #555;
+}
+
+.manual-input-grid input {
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.manual-input-grid input:focus {
+  outline: none;
+  border-color: #4CAF50;
+  box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
+}
+
+.fallback-button {
+  display: block;
+  margin: 10px auto;
+  padding: 8px 16px;
+  background-color: #6c757d;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.fallback-button:hover {
+  background-color: #5a6268;
+}
+
+.switch-mode-button {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  padding: 12px;
+  background-color: #6c757d;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.switch-mode-button:hover {
+  background-color: #5a6268;
+}

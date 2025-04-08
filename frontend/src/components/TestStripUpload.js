@@ -5,11 +5,20 @@ import heic2any from 'heic2any';
 
 const TestStripUpload = () => {
   const navigate = useNavigate();
-  const { processImage } = useTestStrip();
+  const { processImage, setDetectedReadings, isProcessing: contextIsProcessing } = useTestStrip();
   const [previewUrl, setPreviewUrl] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [processedFile, setProcessedFile] = useState(null);
+  const [showManualInput, setShowManualInput] = useState(false);
+  const [manualReadings, setManualReadings] = useState({
+    pH: '',
+    'Total Chlorine': '',
+    'Free Chlorine': '',
+    'Total Hardness': '',
+    'Total Alkalinity': '',
+    'Cyanuric Acid': ''
+  });
 
   const handleFileChange = async (e) => {
     const file = e.target.files[0];
@@ -17,6 +26,7 @@ const TestStripUpload = () => {
 
     setIsLoading(true);
     setError(null);
+    setShowManualInput(false);
 
     try {
       let imageToProcess = file;
@@ -52,6 +62,7 @@ const TestStripUpload = () => {
       setError(err.message || 'Failed to process image');
       console.error('Error handling file:', err);
       setProcessedFile(null);
+      setShowManualInput(true);
     } finally {
       setIsLoading(false);
     }
@@ -59,23 +70,60 @@ const TestStripUpload = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!processedFile) {
-      setError('Please select an image first');
-      return;
-    }
-
     setError(null);
     setIsLoading(true);
 
-    try {
-      await processImage(processedFile);
-      navigate('/test-strip/results');
-    } catch (err) {
-      setError(err.message || 'Failed to process image');
-      console.error('Error processing image:', err);
-    } finally {
-      setIsLoading(false);
+    if (showManualInput) {
+      // Handle manual input submission
+      try {
+        const readings = Object.fromEntries(
+          Object.entries(manualReadings)
+            .map(([key, value]) => [key, parseFloat(value)])
+            .filter(([_, value]) => !isNaN(value))
+        );
+
+        if (Object.keys(readings).length === 0) {
+          throw new Error('Please enter at least one valid reading');
+        }
+
+        setDetectedReadings(readings);
+        navigate('/test-strip/results');
+      } catch (err) {
+        setError(err.message || 'Failed to process manual readings');
+        console.error('Error processing manual readings:', err);
+      }
+    } else {
+      // Handle image processing
+      if (!processedFile) {
+        setError('Please select an image first');
+        return;
+      }
+
+      try {
+        await processImage(processedFile);
+        navigate('/test-strip/results');
+      } catch (err) {
+        setError(err.message || 'Failed to process image');
+        console.error('Error processing image:', err);
+        // Automatically show manual input after image processing failure
+        setShowManualInput(true);
+        // Pre-fill any successfully detected readings
+        if (err.partialReadings) {
+          setManualReadings(prev => ({
+            ...prev,
+            ...err.partialReadings
+          }));
+        }
+      }
     }
+    setIsLoading(false);
+  };
+
+  const handleManualInputChange = (parameter, value) => {
+    setManualReadings(prev => ({
+      ...prev,
+      [parameter]: value
+    }));
   };
 
   return (
@@ -89,18 +137,21 @@ const TestStripUpload = () => {
           <li>Ensure good lighting conditions</li>
           <li>Take the photo from directly above the strip</li>
           <li>Make sure the strip is fully visible in the frame</li>
+          <li>Align the test strip vertically in the center of the image</li>
         </ul>
       </div>
 
       <form onSubmit={handleSubmit}>
-        <div className="file-input-container">
-          <input
-            type="file"
-            accept="image/*,.heic"
-            onChange={handleFileChange}
-            className="file-input"
-          />
-        </div>
+        {!showManualInput && (
+          <div className="file-input-container">
+            <input
+              type="file"
+              accept="image/*,.heic"
+              onChange={handleFileChange}
+              className="file-input"
+            />
+          </div>
+        )}
 
         {isLoading && (
           <div className="loading">
@@ -111,22 +162,74 @@ const TestStripUpload = () => {
         {error && (
           <div className="error">
             <p>{error}</p>
+            {!showManualInput && (
+              <button
+                type="button"
+                onClick={() => setShowManualInput(true)}
+                className="fallback-button"
+              >
+                Enter Readings Manually
+              </button>
+            )}
           </div>
         )}
 
-        {previewUrl && (
+        {previewUrl && !showManualInput && (
           <div className="preview-container">
             <img src={previewUrl} alt="Test strip preview" className="preview-image" />
           </div>
         )}
 
+        {showManualInput && (
+          <div className="manual-input-container">
+            <h3>Enter Test Strip Readings Manually</h3>
+            <div className="manual-input-grid">
+              {Object.entries(manualReadings).map(([parameter, value]) => (
+                <div key={parameter} className="input-group">
+                  <label htmlFor={parameter}>{parameter}:</label>
+                  <input
+                    type="number"
+                    id={parameter}
+                    value={value}
+                    onChange={(e) => handleManualInputChange(parameter, e.target.value)}
+                    step="0.1"
+                    min="0"
+                    placeholder="Enter value"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <button
           type="submit"
-          disabled={!previewUrl || isLoading}
+          disabled={isLoading || (!showManualInput && !previewUrl)}
           className="process-button"
         >
-          Process Image
+          {showManualInput ? 'Submit Readings' : 'Process Image'}
         </button>
+
+        {showManualInput && (
+          <button
+            type="button"
+            onClick={() => {
+              setShowManualInput(false);
+              setError(null);
+              setManualReadings({
+                pH: '',
+                'Total Chlorine': '',
+                'Free Chlorine': '',
+                'Total Hardness': '',
+                'Total Alkalinity': '',
+                'Cyanuric Acid': ''
+              });
+            }}
+            className="switch-mode-button"
+          >
+            Try Image Upload Instead
+          </button>
+        )}
       </form>
     </div>
   );

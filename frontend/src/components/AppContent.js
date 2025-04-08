@@ -123,7 +123,6 @@ const AppContent = () => {
             <div className="system-selection">
               <select value={system} onChange={(e) => setSystem(e.target.value)}>
                 <option value="pool">Pool</option>
-                <option value="spa">Spa</option>
                 <option value="cold_plunge">Cold Plunge</option>
               </select>
             </div>
