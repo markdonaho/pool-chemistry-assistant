@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, Routes, Route, Navigate } from "react-router-dom";
 import { getAuth, signOut } from "firebase/auth";
+import { useTestStrip } from "../context/TestStripContext";
 import TestStripUpload from "./TestStripUpload";
 import TestStripResults from "./TestStripResults";
 
 const AppContent = () => {
   const navigate = useNavigate();
   const auth = getAuth();
+  const { detectedReadings } = useTestStrip();
+
   const [system, setSystem] = useState("pool");
   const [current, setCurrent] = useState({
     volume: 0,
@@ -23,8 +26,30 @@ const AppContent = () => {
   const [error, setError] = useState(null);
 
   useEffect(() => {
+    if (detectedReadings) {
+      console.log('Updating dashboard form with detected readings:', detectedReadings);
+      setCurrent(prevCurrent => ({
+        ...prevCurrent,
+        pH: detectedReadings['pH'] ?? prevCurrent.pH,
+        alkalinity: detectedReadings['Total Alkalinity'] ?? prevCurrent.alkalinity,
+        calcium: detectedReadings['Total Hardness'] ?? prevCurrent.calcium,
+        cyanuricAcid: detectedReadings['Cyanuric Acid'] ?? prevCurrent.cyanuricAcid,
+        chlorine: detectedReadings['Free Chlorine'] ?? prevCurrent.chlorine,
+        bromine: detectedReadings['Bromine'] ?? prevCurrent.bromine
+      }));
+    }
+  }, [detectedReadings]);
+
+  useEffect(() => {
     const user = auth.currentUser;
     if (user) {
+      const newVolume = system === 'pool' ? 15000 : 124;
+      // Set default volume immediately when system changes
+      setCurrent(prev => ({
+        ...prev, // Keep potentially updated readings
+        volume: prev.volume === 0 || (system === 'pool' && prev.volume === 124) || (system === 'cold_plunge' && prev.volume === 15000) ? newVolume : prev.volume // Only set default if volume hasn't been manually changed from the *other* system's default or 0
+      }));
+
       user.getIdToken().then((token) => {
         fetch("https://us-central1-poolchemistryassistant.cloudfunctions.net/systems", {
           method: "POST",
@@ -43,9 +68,10 @@ const AppContent = () => {
           .then((result) => {
             console.log("Systems data fetched:", result.data);
             const targets = result.data[system].targets;
+            // Apply targets, ensuring volume keeps its potentially set default
             setCurrent(prev => ({
-              ...prev,
-              ...Object.fromEntries(Object.keys(targets).map((k) => [k, targets[k]]))
+              ...targets,
+              ...prev, // Apply existing state (including the default volume we just set)
             }));
           })
           .catch((err) => {

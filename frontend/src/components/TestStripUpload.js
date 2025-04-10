@@ -5,7 +5,7 @@ import heic2any from 'heic2any';
 
 const TestStripUpload = () => {
   const navigate = useNavigate();
-  const { processImage, setDetectedReadings, isProcessing: contextIsProcessing } = useTestStrip();
+  const { processImage, setDetectedReadings, isProcessing: contextIsProcessing, clearState, error: contextError } = useTestStrip();
   const [previewUrl, setPreviewUrl] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -20,6 +20,7 @@ const TestStripUpload = () => {
     'Cyanuric Acid': '',
     'pH': ''
   });
+  const [selectedSystem, setSelectedSystem] = useState('pool');
 
   const handleFileChange = async (e) => {
     const file = e.target.files[0];
@@ -101,7 +102,7 @@ const TestStripUpload = () => {
       }
 
       try {
-        await processImage(processedFile);
+        await processImage(processedFile, selectedSystem);
         navigate('/test-strip/results');
       } catch (err) {
         setError(err.message || 'Failed to process image');
@@ -127,6 +128,10 @@ const TestStripUpload = () => {
     }));
   };
 
+  const handleSystemChange = (e) => {
+    setSelectedSystem(e.target.value);
+  };
+
   return (
     <div className="upload-container">
       <h2>Upload Test Strip Image</h2>
@@ -143,6 +148,34 @@ const TestStripUpload = () => {
       </div>
 
       <form onSubmit={handleSubmit}>
+        <div className="system-selection-upload">
+          <label>Select System:</label>
+          <div>
+            <input 
+              type="radio" 
+              id="pool-upload" 
+              name="system-upload" 
+              value="pool" 
+              checked={selectedSystem === 'pool'}
+              onChange={handleSystemChange}
+              disabled={contextIsProcessing}
+            />
+            <label htmlFor="pool-upload">Pool</label>
+          </div>
+          <div>
+            <input 
+              type="radio" 
+              id="cold-plunge-upload" 
+              name="system-upload" 
+              value="cold_plunge" 
+              checked={selectedSystem === 'cold_plunge'}
+              onChange={handleSystemChange}
+              disabled={contextIsProcessing}
+            />
+            <label htmlFor="cold-plunge-upload">Cold Plunge</label>
+          </div>
+        </div>
+
         {!showManualInput && (
           <div className="file-input-container">
             <input
@@ -150,6 +183,7 @@ const TestStripUpload = () => {
               accept="image/*,.heic"
               onChange={handleFileChange}
               className="file-input"
+              disabled={contextIsProcessing}
             />
           </div>
         )}
@@ -205,7 +239,7 @@ const TestStripUpload = () => {
 
         <button
           type="submit"
-          disabled={isLoading || (!showManualInput && !previewUrl)}
+          disabled={isLoading || (!showManualInput && !previewUrl) || contextIsProcessing}
           className="process-button"
         >
           {showManualInput ? 'Submit Readings' : 'Process Image'}

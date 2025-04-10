@@ -5,7 +5,7 @@ import { getAuth } from 'firebase/auth';
 import config from '../config';
 
 const TestStripResults = () => {
-  const { image, detectedReadings, adjustments, setAdjustments, error } = useTestStrip();
+  const { image, detectedReadings, adjustments, setAdjustments, error, testStripSystem } = useTestStrip();
   const [isCalculating, setIsCalculating] = useState(false);
   const [calculationError, setCalculationError] = useState(null);
   const [localImageUrl, setLocalImageUrl] = useState(null);
@@ -71,7 +71,7 @@ const TestStripResults = () => {
             'Authorization': `Bearer ${token}`,
           },
           body: JSON.stringify({
-            system: 'pool',
+            system: testStripSystem,
             current: detectedReadings
           })
         });
@@ -92,59 +92,48 @@ const TestStripResults = () => {
     };
 
     calculateAdjustments();
-  }, [detectedReadings, setAdjustments, navigate, auth]);
+  }, [detectedReadings, setAdjustments, navigate, auth, testStripSystem]);
 
   const formatAdjustment = (adjustment) => {
     // Handle shock treatment object
     if (typeof adjustment === 'object' && adjustment !== null && 'amount' in adjustment && 'chemical' in adjustment) {
-      return `Add ${adjustment.amount.toFixed(1)} oz of ${adjustment.chemical}`;
+      // Ensure amount is a number before calling toFixed
+      const amount = Number(adjustment.amount);
+      return `Add ${isNaN(amount) ? 'N/A' : amount.toFixed(1)} oz of ${adjustment.chemical}`;
     }
 
     // Handle regular chemical adjustments array
     if (Array.isArray(adjustment)) {
-      const [amount, direction, chemical] = adjustment;
-      if (amount === 0) return "No adjustment needed";
-      if (!direction) return "No adjustment needed";
+      const [amountValue, direction, chemical] = adjustment;
+      // Ensure amountValue is a number
+      const amount = Number(amountValue);
+
+      if (isNaN(amount) || amount === 0 || !direction) {
+        return "No adjustment needed";
+      }
       return `${direction === 'up' ? 'Add' : 'Reduce'} ${Math.abs(amount).toFixed(1)} oz of ${chemical}`;
     }
 
-    // If the adjustment is an object with numeric properties (like pH, Total Alkalinity, etc.)
-    if (typeof adjustment === 'object' && adjustment !== null) {
-      // Extract the values from the object - we expect [amount, direction, chemical]
-      const values = Object.values(adjustment);
-      if (values.length === 3) {
-        const [amount, direction, chemical] = values;
-        if (amount === 0) return "No adjustment needed";
-        if (!direction) return "No adjustment needed";
-        return `${direction === 'up' ? 'Add' : 'Reduce'} ${Math.abs(amount).toFixed(1)} oz of ${chemical}`;
-      }
-    }
-
-    // Fallback for any other format
+    // Fallback for any other unexpected format
+    console.warn('Unexpected adjustment format:', adjustment); // Log unexpected formats
     return "Unable to process adjustment";
   };
 
   const getRecommendationClass = (adjustment) => {
     // Handle shock treatment object
     if (typeof adjustment === 'object' && adjustment !== null && 'amount' in adjustment) {
-      return adjustment.amount === 0 ? 'no-change' : 'needs-adjustment';
+      const amount = Number(adjustment.amount);
+      return isNaN(amount) || amount === 0 ? 'no-change' : 'needs-adjustment';
     }
 
     // Handle regular chemical adjustments array
     if (Array.isArray(adjustment)) {
-      const [amount] = adjustment;
-      return amount === 0 ? 'no-change' : 'needs-adjustment';
+      const [amountValue] = adjustment;
+      const amount = Number(amountValue);
+      return isNaN(amount) || amount === 0 ? 'no-change' : 'needs-adjustment';
     }
 
-    // Handle object with numeric properties
-    if (typeof adjustment === 'object' && adjustment !== null) {
-      const values = Object.values(adjustment);
-      if (values.length > 0) {
-        const amount = values[0];
-        return amount === 0 ? 'no-change' : 'needs-adjustment';
-      }
-    }
-
+    // Default class for unexpected formats
     return '';
   };
 
@@ -213,12 +202,12 @@ const TestStripResults = () => {
                 </tr>
               </thead>
               <tbody>
-                {Object.entries(adjustments)
+                {Object.entries(adjustments.adjustments || {})
                   .filter(([chemical]) => chemical !== 'shock')
-                  .map(([parameter, adjustment]) => (
-                    <tr key={parameter} className={getRecommendationClass(adjustment)}>
+                  .map(([parameter, adjustmentValue]) => (
+                    <tr key={parameter} className={getRecommendationClass(adjustmentValue)}>
                       <td>{parameter}</td>
-                      <td>{formatAdjustment(adjustment)}</td>
+                      <td>{formatAdjustment(adjustmentValue)}</td>
                     </tr>
                   ))}
               </tbody>

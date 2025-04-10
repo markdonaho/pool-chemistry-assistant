@@ -10,6 +10,7 @@ export const TestStripProvider = ({ children }) => {
   const [adjustments, setAdjustments] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState(null);
+  const [testStripSystem, setTestStripSystem] = useState('pool');
 
   // Color key for test strip readings
   const colorKey = {
@@ -85,11 +86,12 @@ export const TestStripProvider = ({ children }) => {
     "pH": { x: 0.5, y: 0.91 }
   };
 
-  const processImage = async (imageFile) => {
+  const processImage = async (imageFile, systemType) => {
     setIsProcessing(true);
     setError(null);
     setDetectedReadings(null);
     setImage(imageFile);
+    setTestStripSystem(systemType);
 
     let imageUrl = null;
 
@@ -237,6 +239,7 @@ export const TestStripProvider = ({ children }) => {
     setDetectedReadings(null);
     setAdjustments(null);
     setError(null);
+    setTestStripSystem('pool');
   };
 
   return (
@@ -247,9 +250,11 @@ export const TestStripProvider = ({ children }) => {
         adjustments,
         isProcessing,
         error,
+        testStripSystem,
         processImage,
         clearState,
-        setAdjustments
+        setAdjustments,
+        setTestStripSystem
       }}
     >
       {children}
