@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useTestStrip } from '../context/TestStripContext';
 import { useNavigate } from 'react-router-dom';
 import { getAuth } from 'firebase/auth';
@@ -11,6 +11,46 @@ const TestStripResults = () => {
   const [localImageUrl, setLocalImageUrl] = useState(null);
   const navigate = useNavigate();
   const auth = getAuth();
+
+  // Create blob URL
+  const createBlobUrl = useCallback((imageData) => {
+    if (imageData instanceof Blob) {
+      return URL.createObjectURL(imageData);
+    }
+    return imageData;
+  }, []);
+
+  // Cleanup blob URL
+  const cleanupBlobUrl = useCallback((url) => {
+    if (url && url.startsWith('blob:')) {
+      URL.revokeObjectURL(url);
+    }
+  }, []);
+
+  // Handle image URL
+  useEffect(() => {
+    let currentUrl = null;
+
+    if (image) {
+      currentUrl = createBlobUrl(image);
+      setLocalImageUrl(currentUrl);
+    }
+
+    return () => {
+      if (currentUrl) {
+        cleanupBlobUrl(currentUrl);
+      }
+    };
+  }, [image, createBlobUrl, cleanupBlobUrl]);
+
+  // Cleanup on component unmount
+  useEffect(() => {
+    return () => {
+      if (localImageUrl) {
+        cleanupBlobUrl(localImageUrl);
+      }
+    };
+  }, [localImageUrl, cleanupBlobUrl]);
 
   useEffect(() => {
     if (!detectedReadings) {
@@ -107,21 +147,6 @@ const TestStripResults = () => {
 
     return '';
   };
-
-  // Handle image URL
-  useEffect(() => {
-    if (!image) return;
-    
-    if (image instanceof Blob) {
-      const url = URL.createObjectURL(image);
-      setLocalImageUrl(url);
-      return () => {
-        if (url) URL.revokeObjectURL(url);
-      };
-    } else if (typeof image === 'string') {
-      setLocalImageUrl(image);
-    }
-  }, [image]);
 
   if (error) {
     return (

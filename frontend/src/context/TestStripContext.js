@@ -88,7 +88,10 @@ export const TestStripProvider = ({ children }) => {
   const processImage = async (imageFile) => {
     setIsProcessing(true);
     setError(null);
-    let imageUrl;
+    setDetectedReadings(null);
+    setImage(imageFile);
+
+    let imageUrl = null;
 
     try {
       if (!imageFile) {
@@ -96,7 +99,6 @@ export const TestStripProvider = ({ children }) => {
       }
 
       imageUrl = URL.createObjectURL(imageFile);
-      setImage(imageUrl);
 
       // Create a canvas to process the image
       const canvas = document.createElement('canvas');
@@ -200,7 +202,7 @@ export const TestStripProvider = ({ children }) => {
     } catch (err) {
       setError(err.message || 'Failed to process image');
       console.error('Image processing error:', err);
-      setDetectedReadings(null);
+      setDetectedReadings(err.partialReadings || null);
       throw err; // Re-throw to trigger the fallback in TestStripUpload
     } finally {
       setIsProcessing(false);
