@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, Routes, Route, Navigate } from "react-router-dom";
 import { getAuth, signOut } from "firebase/auth";
+import { getFirestore, collection, query, where, getDocs, orderBy, limit } from "firebase/firestore";
 import { useTestStrip } from "../context/TestStripContext";
 import TestStripUpload from "./TestStripUpload";
 import TestStripResults from "./TestStripResults";
@@ -8,35 +9,39 @@ import TestStripResults from "./TestStripResults";
 const AppContent = () => {
   const navigate = useNavigate();
   const auth = getAuth();
+  const db = getFirestore();
   const { detectedReadings } = useTestStrip();
 
   const [system, setSystem] = useState("pool");
   const [current, setCurrent] = useState({
     volume: 0,
-    pH: 7.2,
-    alkalinity: 100,
-    calcium: 200,
-    cyanuricAcid: 30,
-    chlorine: 1.0,
-    bromine: 0
+    'pH': 7.2,
+    'Total Alkalinity': 100,
+    'Total Hardness': 200,
+    'Cyanuric Acid': 30,
+    'Free Chlorine': 1.0,
+    'Total Chlorine': 1.0,
+    'Bromine': 0
   });
   const [adjustments, setAdjustments] = useState(null);
   const [readings, setReadings] = useState([]);
   const [showReadings, setShowReadings] = useState(false);
+  const [loadingReadings, setLoadingReadings] = useState(false);
+  const [readingsError, setReadingsError] = useState(null);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     if (detectedReadings) {
-      console.log('Updating dashboard form with detected readings:', detectedReadings);
-      setCurrent(prevCurrent => ({
-        ...prevCurrent,
-        pH: detectedReadings['pH'] ?? prevCurrent.pH,
-        alkalinity: detectedReadings['Total Alkalinity'] ?? prevCurrent.alkalinity,
-        calcium: detectedReadings['Total Hardness'] ?? prevCurrent.calcium,
-        cyanuricAcid: detectedReadings['Cyanuric Acid'] ?? prevCurrent.cyanuricAcid,
-        chlorine: detectedReadings['Free Chlorine'] ?? prevCurrent.chlorine,
-        bromine: detectedReadings['Bromine'] ?? prevCurrent.bromine
-      }));
+      console.log('Updating dashboard form with detected readings (Title Case):', detectedReadings);
+      setCurrent(prevCurrent => {
+        const updated = { ...prevCurrent };
+        for (const key in detectedReadings) {
+          if (key in updated) {
+            updated[key] = detectedReadings[key] ?? updated[key];
+          }
+        }
+        return updated;
+      });
     }
   }, [detectedReadings]);
 
@@ -44,10 +49,12 @@ const AppContent = () => {
     const user = auth.currentUser;
     if (user) {
       const newVolume = system === 'pool' ? 15000 : 124;
-      // Set default volume immediately when system changes
       setCurrent(prev => ({
-        ...prev, // Keep potentially updated readings
-        volume: prev.volume === 0 || (system === 'pool' && prev.volume === 124) || (system === 'cold_plunge' && prev.volume === 15000) ? newVolume : prev.volume // Only set default if volume hasn't been manually changed from the *other* system's default or 0
+        ...prev,
+        volume: prev.volume === 0 || 
+                (system === 'pool' && prev.volume === 124) || 
+                (system === 'cold_plunge' && prev.volume === 15000) 
+                ? newVolume : prev.volume
       }));
 
       user.getIdToken().then((token) => {
@@ -66,13 +73,7 @@ const AppContent = () => {
             return response.json();
           })
           .then((result) => {
-            console.log("Systems data fetched:", result.data);
-            const targets = result.data[system].targets;
-            // Apply targets, ensuring volume keeps its potentially set default
-            setCurrent(prev => ({
-              ...targets,
-              ...prev, // Apply existing state (including the default volume we just set)
-            }));
+            console.log("Systems data fetched, targets available but not merged into form state:", result.data);
           })
           .catch((err) => {
             console.error("Error fetching systems:", err.message);
@@ -81,6 +82,43 @@ const AppContent = () => {
       });
     }
   }, [system, auth]);
+
+  useEffect(() => {
+    const fetchReadings = async () => {
+      const currentUser = auth.currentUser;
+      if (showReadings && currentUser) {
+        console.log(`Fetching readings for user: ${currentUser.uid}`);
+        setLoadingReadings(true);
+        setReadingsError(null);
+        setReadings([]);
+
+        try {
+          const readingsCol = collection(db, "readings");
+          console.log("Executing query: Order by timestamp desc, limit 20");
+          const q = query(
+            readingsCol, 
+            orderBy("timestamp", "desc"), 
+            limit(20) 
+          );
+          
+          const querySnapshot = await getDocs(q);
+          console.log(`Query returned ${querySnapshot.size} documents`);
+
+          const userReadings = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          console.log("Mapped readings:", userReadings);
+
+          setReadings(userReadings);
+        } catch (err) {
+          console.error("Error fetching previous readings:", err);
+          setReadingsError("Failed to load previous readings. Please try again later.");
+        } finally {
+          setLoadingReadings(false);
+        }
+      }
+    };
+
+    fetchReadings();
+  }, [showReadings, auth, db]);
 
   const handleLogout = () => {
     signOut(auth)
@@ -128,7 +166,7 @@ const AppContent = () => {
   };
 
   const toggleReadings = () => {
-    setShowReadings(!showReadings);
+    setShowReadings(prev => !prev);
   };
 
   return (
@@ -160,12 +198,12 @@ const AppContent = () => {
                     <label>{key}:</label>
                     <input
                       type="number"
+                      step={key === 'volume' ? 100 : 0.1}
                       value={isNaN(value) ? '' : value}
                       onChange={(e) => {
                         const newValue = parseFloat(e.target.value);
                         setCurrent({ ...current, [key]: isNaN(newValue) ? 0 : newValue });
                       }}
-                      step="0.1"
                     />
                   </div>
                 ))}
@@ -198,38 +236,50 @@ const AppContent = () => {
             )}
 
             <div className="readings-section">
-              <button onClick={toggleReadings}>
-                {showReadings ? 'Hide Previous Readings' : 'Show Previous Readings'}
+              <button onClick={toggleReadings} disabled={loadingReadings}>
+                {loadingReadings 
+                  ? 'Loading Readings...' 
+                  : showReadings 
+                    ? 'Hide Previous Readings' 
+                    : 'Show Previous Readings'}
               </button>
-              {showReadings && readings.length > 0 && (
+              {showReadings && (
                 <div className="readings">
                   <h2>Previous Readings</h2>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Date</th>
-                        <th>pH</th>
-                        <th>Total Chlorine</th>
-                        <th>Free Chlorine</th>
-                        <th>Total Hardness</th>
-                        <th>Total Alkalinity</th>
-                        <th>Cyanuric Acid</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {readings.map((reading) => (
-                        <tr key={reading.id}>
-                          <td>{new Date(reading.timestamp).toLocaleDateString()}</td>
-                          <td>{reading.readings.pH}</td>
-                          <td>{reading.readings['Total Chlorine']}</td>
-                          <td>{reading.readings['Free Chlorine']}</td>
-                          <td>{reading.readings['Total Hardness']}</td>
-                          <td>{reading.readings['Total Alkalinity']}</td>
-                          <td>{reading.readings['Cyanuric Acid']}</td>
+                  {readingsError && <p className="error">{readingsError}</p>}
+                  {!loadingReadings && !readingsError && readings.length === 0 && (
+                    <p>No previous readings found.</p>
+                  )}
+                  {!loadingReadings && !readingsError && readings.length > 0 && (
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Date</th>
+                          <th>pH</th>
+                          <th>Total Chlorine</th>
+                          <th>Free Chlorine</th>
+                          <th>Total Hardness</th>
+                          <th>Total Alkalinity</th>
+                          <th>Cyanuric Acid</th>
+                          <th>Bromine</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {readings.map((reading) => (
+                          <tr key={reading.id}>
+                            <td>{reading.timestamp?.toDate ? reading.timestamp.toDate().toLocaleDateString() : 'N/A'}</td>
+                            <td>{reading.readings?.pH ?? 'N/A'}</td>
+                            <td>{reading.readings?.['Total Chlorine'] ?? 'N/A'}</td>
+                            <td>{reading.readings?.['Free Chlorine'] ?? 'N/A'}</td>
+                            <td>{reading.readings?.['Total Hardness'] ?? 'N/A'}</td>
+                            <td>{reading.readings?.['Total Alkalinity'] ?? 'N/A'}</td>
+                            <td>{reading.readings?.['Cyanuric Acid'] ?? 'N/A'}</td>
+                            <td>{reading.readings?.['Bromine'] ?? 'N/A'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
                 </div>
               )}
             </div>
