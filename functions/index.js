@@ -5,55 +5,84 @@ const cors = require("cors")({origin: true});
 admin.initializeApp();
 const db = admin.firestore();
 
+// --- Constants --- 
+const GRAMS_PER_POUND = 453.592;
+const GRAMS_PER_OZ = 28.3495;
+const GRAMS_PER_TSP = 5; // Approx for granules
+const GRAMS_PER_TBSP = 16; // Approx for granules (3 tsp)
+const US_GALLONS_PER_LITER = 0.264172;
+
+// --- System Definitions --- 
 const systems = {
   cold_plunge: {
-    volume: 126,
+    volume: 126, // gallons
     targets: {
-      "Total Hardness": 150,
-      "Total Chlorine": 3,
-      "Free Chlorine": 2,
-      "Bromine": 4,
-      "Total Alkalinity": 120,
-      "Cyanuric Acid": 0,
+      "Total Hardness": 150, // ppm
+      "Free Chlorine": 2, // ppm
+      "Total Alkalinity": 120, // ppm
       "pH": 7.4,
+      // Maybe exclude Bromine/CYA/Total Chlorine targets if not relevant for plunge?
     },
   },
   pool: {
-    volume: 15000,
+    volume: 15000, // gallons
     targets: {
-      "Total Hardness": 300,
-      "Total Chlorine": 3,
-      "Free Chlorine": 3,
-      "Total Alkalinity": 100,
-      "Cyanuric Acid": 40,
+      "Total Hardness": 300, // ppm
+      "Free Chlorine": 3, // ppm
+      "Total Alkalinity": 100, // ppm
+      "Cyanuric Acid": 40, // ppm
       "pH": 7.4,
     },
   },
 };
 
-const rates = {
-  cold_plunge: {
-    "Total Hardness": {up: 15 / 100, down: 0},
-    "Total Chlorine": {up: 2.5 / 100, down: 0},
-    "Free Chlorine": {up: 2.5 / 100, down: 0},
-    "Bromine": {up: 0, down: 0},
-    "Total Alkalinity": {up: 15 / 100, down: 0},
-    "Cyanuric Acid": {up: 0, down: 0},
-    "pH": {up: 5 / 100 / 0.2, down: 5 / 100 / 0.2},
+// --- Chemical Definitions & Dosage --- 
+// Structure: { chemicalKey: { productName: { pool: 'Name', cold_plunge: 'Name' }, gramsPerPpmPerGallon: X } }
+// Note: Dosage rates are approximate. VERIFY WITH PRODUCT LABELS.
+const chemicals = {
+  ph_up: {
+    productName: { pool: "PoolMate pH Up (Soda Ash)", cold_plunge: "SpaGuard pH Increaser" },
+    gramsPerPpmPerGallon: 0, // pH is complex, handle separately
   },
-  pool: {
-    "Total Hardness": {up: 0.0068, down: 0},
-    "Total Chlorine": {up: 0.004, down: 0},
-    "Free Chlorine": {up: 0.004, down: 0},
-    "Bromine": {up: 0, down: 0},
-    "Total Alkalinity": {up: 0.0068, down: 0},
-    "Cyanuric Acid": {up: 0.0453, down: 0},
-    "pH": {up: 0.425, down: 0.0525},
+  ph_down: {
+    productName: { pool: "HTH pH Down (Dry Acid)", cold_plunge: "SpaGuard pH Decreaser" },
+    gramsPerPpmPerGallon: 0, // pH is complex, handle separately
   },
+  alkalinity_up: {
+    productName: { pool: "PoolMate Alkalinity Increaser (Sodium Bicarbonate)", cold_plunge: "SpaGuard Alkalinity Increaser" },
+    // 1.5 lbs / 10 ppm / 10000 gal => 1.5 * 454 / 10 / 10000 = 0.00681 g/ppm/gal
+    gramsPerPpmPerGallon: 0.00681,
+  },
+  hardness_up: {
+    productName: { pool: "HTH Calcium Hardness Increaser (Calcium Chloride)", cold_plunge: "SpaGuard Calcium Hardness Increaser" },
+    // 1.25 lbs (CaCl2 77%) / 10 ppm / 10000 gal => 1.25 * 454 / 10 / 10000 = 0.005675 g/ppm/gal 
+    // (Adjusting for common ~94-97% purity might increase this slightly)
+    gramsPerPpmPerGallon: 0.0058, 
+  },
+  chlorine_up: {
+    // Granular chlorine rates vary significantly by % active ingredient
+    productName: { pool: "Clorox/HTH Pool Shock (Cal Hypo based)", cold_plunge: "SpaGuard Chlorinating Concentrate (Dichlor based)" },
+    // Pool (Cal Hypo ~65%): ~2.5 oz / 1 ppm / 10000 gal => 2.5 * 28.35 / 1 / 10000 = 0.0070 g/ppm/gal
+    // Spa (Dichlor ~56%): ~3 oz / 1 ppm / 10000 gal => 3 * 28.35 / 1 / 10000 = 0.0085 g/ppm/gal 
+    gramsPerPpmPerGallon: { pool: 0.0070, cold_plunge: 0.0085 }, 
+  },
+  cya_up: {
+    productName: { pool: "HTH Cyanuric Acid Stabilizer", cold_plunge: "N/A" }, // Usually not needed for spa
+    // ~1 lb / 10 ppm / 10000 gal => 1 * 454 / 10 / 10000 = 0.00454 g/ppm/gal
+    gramsPerPpmPerGallon: 0.00454,
+  }
+  // Add other chemicals if needed (e.g., alkalinity down - often muriatic acid or dry acid, CYA down - dilution)
 };
 
+// Special handling for pH (more complex calculation needed)
+// This is a placeholder - real pH adjustment depends heavily on TA.
+const phRates = {
+  pool: { up: 0.425, down: 0.0525 }, // Original arbitrary rates, needs better logic
+  cold_plunge: { up: 0.1, down: 0.01 }, // Scaled down arbitrarily
+};
 
-// Missing JSDoc comment
+// --- Helper Functions --- 
+
 /**
  * Validate the Firebase ID token from the Authorization header.
  *
@@ -74,38 +103,85 @@ async function validateToken(authHeader) {
   }
 }
 
-
 /**
- * Calculate adjustment for a specific field using current and target values.
- *
- * @param {number} current - The current value of the field.
- * @param {number} target - The target value of the field.
- * @param {number} volume - The volume of the system.
- * @param {number} rateUp - The rate of increase for the field.
- * @param {number} rateDown - The rate of decrease for the field.
- * @param {string} field - The name of the field being adjusted.
- * @return {[number, string, string]} Array amount, direction and chemical type.
+ * Converts grams to appropriate units based on system type.
+ * @param {number} grams - Amount in grams.
+ * @param {string} system - 'pool' or 'cold_plunge'.
+ * @return {[number, string]} Amount and unit string.
  */
-function calculateAdjustment(current, target, volume, rateUp, rateDown, field) {
-  const difference = target - current;
-  if (difference > 0) {
-    const adjustment = difference * volume * rateUp;
-    const direction = "up";
-    const chemical = field.includes("pH") ?
-      "pH Increaser" :
-      field.includes("Chlorine") ?
-      "Chlorinating Concentrate" :
-      `${field} Increaser`;
-    return [adjustment, direction, chemical];
-  } else if (difference < 0) {
-    const adjustment = -difference * volume * rateDown;
-    const direction = "down";
-    const chemical = field.includes("pH") ? "pH Decreaser" : `${field} Reducer`;
-    return [adjustment, direction, chemical];
+function convertGramsToUnit(grams, system) {
+  if (system === 'cold_plunge') {
+    // Prefer Tablespoons for cold plunge
+    const tbsp = grams / GRAMS_PER_TBSP;
+    if (tbsp < 1/4) return [grams, "grams"]; // Very small amounts in grams
+    return [tbsp, "tbsp"];
   } else {
-    return [0, null, null];
+    // Prefer Pounds or Ounces for pool
+    const pounds = grams / GRAMS_PER_POUND;
+    if (pounds >= 0.5) return [pounds, "lbs"]; // Use pounds if >= 0.5 lbs
+    const ounces = grams / GRAMS_PER_OZ;
+    if (ounces >= 1) return [ounces, "oz"]; // Use ounces if >= 1 oz
+    return [grams, "grams"]; // Small amounts in grams
   }
 }
+
+/**
+ * Calculates adjustment for a chemical based on ppm change.
+ *
+ * @param {string} field - The reading field name (e.g., "Total Alkalinity").
+ * @param {number} currentVal - The current reading ppm.
+ * @param {number} targetVal - The target reading ppm.
+ * @param {number} volumeGallons - System volume in gallons.
+ * @param {string} system - 'pool' or 'cold_plunge'.
+ * @return {[number, string, string, string] | null} [amount, unit, direction, productName] or null if no adjustment.
+ */
+function calculateChemicalAdjustment(field, currentVal, targetVal, volumeGallons, system) {
+  const difference = targetVal - currentVal;
+  if (Math.abs(difference) < 0.01) return null; // Ignore tiny differences
+
+  let chemicalKey = null;
+  let direction = difference > 0 ? "up" : "down";
+
+  // Map field name to chemical key
+  if (field === "Total Alkalinity" && direction === "up") chemicalKey = "alkalinity_up";
+  else if (field === "Total Hardness" && direction === "up") chemicalKey = "hardness_up";
+  else if (field === "Free Chlorine" && direction === "up") chemicalKey = "chlorine_up";
+  else if (field === "Cyanuric Acid" && direction === "up") chemicalKey = "cya_up";
+  // Add mappings for 'down' adjustments if needed
+  
+  // Special pH handling (using placeholder rates)
+  if (field === "pH") {
+    const rate = difference > 0 ? phRates[system].up : phRates[system].down;
+    const amountGrams = Math.abs(difference) * volumeGallons * rate * 100; // Arbitrary scaling for placeholder
+    const [amount, unit] = convertGramsToUnit(amountGrams, system);
+    const productName = chemicals[difference > 0 ? "ph_up" : "ph_down"].productName[system];
+    return [amount, unit, direction, productName];
+  }
+
+  if (!chemicalKey) {
+    console.warn(`No chemical mapping found for field: ${field}, direction: ${direction}`);
+    return null;
+  }
+
+  const chemicalInfo = chemicals[chemicalKey];
+  let rate = chemicalInfo.gramsPerPpmPerGallon;
+  if (typeof rate === 'object') {
+    rate = rate[system]; // Get system specific rate if defined (like chlorine)
+  }
+
+  if (!rate) {
+     console.warn(`No dosage rate found for chemical: ${chemicalKey}, system: ${system}`);
+     return null;
+  }
+
+  const totalGramsNeeded = Math.abs(difference) * volumeGallons * rate;
+  const [amount, unit] = convertGramsToUnit(totalGramsNeeded, system);
+  const productName = chemicalInfo.productName[system];
+
+  return [amount, unit, direction, productName];
+}
+
+// --- Cloud Functions --- 
 
 exports.systems = functions.https.onRequest((req, res) => {
   cors(req, res, async () => {
@@ -134,61 +210,105 @@ exports.calculate = functions.https.onRequest((req, res) => {
       const uid = await validateToken(req.headers.authorization);
       const {system, current} = req.body;
 
-      if (!system || !current) {
-        return res.status(400).json({error: "System and readings required"});
+      if (!system || !systems[system] || !current) {
+        return res.status(400).json({error: "Valid system and current readings required"});
       }
-
+      
       const volume = systems[system].volume;
       const targets = systems[system].targets;
-      const systemRates = rates[system];
-
+      
       const adjustments = {};
       let needsShock = false;
-      let shockAmount = 0;
+      let shockAmount = 0; // Grams
 
+      console.log(`Calculating for system: ${system}, volume: ${volume}`);
+      console.log("Current Readings:", current);
+      console.log("Target Readings:", targets);
+
+      // Iterate through TARGETS to ensure we calculate for relevant fields
       for (const field in targets) {
-        if (Object.prototype.hasOwnProperty.call(targets, field)) {
-          const adj = calculateAdjustment(
-              current[field],
-              targets[field],
-              volume,
-              systemRates[field].up,
-              systemRates[field].down,
-              field,
-          );
-          if (adj && field.includes("Chlorine") && adj[1] === "down") {
-            needsShock = true;
-            shockAmount = Math.max(shockAmount, (28 / 500) * volume);
-            adjustments[field] = [0, null, null];
-          } else {
-            adjustments[field] = adj[0] !== 0 ? adj : [0, null, null];
+        if (Object.prototype.hasOwnProperty.call(targets, field) && 
+            Object.prototype.hasOwnProperty.call(current, field)) { // Make sure current reading exists
+              
+          const currentVal = parseFloat(current[field]);
+          const targetVal = targets[field];
+
+          if (isNaN(currentVal)) {
+             console.warn(`Invalid current value for ${field}: ${current[field]}`);
+             continue; // Skip if current value is not a number
           }
+
+          const adj = calculateChemicalAdjustment(
+              field,
+              currentVal,
+              targetVal,
+              volume,
+              system
+          );
+
+          if (adj) {
+            adjustments[field] = adj; // Store [amount, unit, direction, productName]
+          } else {
+            adjustments[field] = [0, null, null, null]; // Indicate no adjustment needed
+          }
+
+          // Basic Shock Logic (Example - needs refinement)
+          // If Free Chlorine is much lower than Total Chlorine (implies high combined chlorine)
+          const totalChlorine = parseFloat(current["Total Chlorine"]);
+          if (field === "Free Chlorine" && !isNaN(totalChlorine) && totalChlorine > 0 && (totalChlorine - currentVal > 0.5)) { // CC > 0.5 ppm
+             needsShock = true;
+          }
+          // Or if Free Chlorine is zero or very low
+          if (field === "Free Chlorine" && currentVal < 0.5) {
+             needsShock = true;
+          }
+        } else {
+           console.warn(`Field ${field} in targets but not in current readings.`);
         }
       }
 
-      await db.collection("readings").add({
-        date: new Date().toISOString().split("T")[0],
-        system,
-        volume,
-        userId: uid,
-        ...Object.fromEntries(
-            Object.keys(targets).flatMap((field) => [
-              [`${field}_current`, current[field]],
-              [`${field}_target`, targets[field]],
-              [`${field}_adjust`, adjustments[field][0]],
-            ]),
-        ),
-      });
-
-      const response = {adjustments};
+      // Calculate shock amount if needed (Example: Target breakpoint chlorination ~ 10x CC)
+      let shockResult = null;
       if (needsShock) {
-        response.shock = {amount: shockAmount, chemical: "Enhanced Shock"};
+         console.log("Shock treatment indicated.");
+         // Example: Raise FC by ~10ppm as a shock for pool, ~5ppm for plunge (adjust as needed)
+         const shockTargetPpm = system === 'pool' ? 10 : 5;
+         const chlorineRate = chemicals.chlorine_up.gramsPerPpmPerGallon[system];
+         const shockGrams = shockTargetPpm * volume * chlorineRate;
+         const [shockAmountConverted, shockUnit] = convertGramsToUnit(shockGrams, system);
+         const shockProductName = chemicals.chlorine_up.productName[system] + " (Shock Dose)"; // Modify name
+         shockResult = {
+             amount: shockAmountConverted,
+             unit: shockUnit,
+             product: shockProductName,
+         };
       }
+
+      // --- Store Readings (Consider refining what is stored) ---
+      // Maybe store the calculated adjustments too?
+      const readingData = {
+        timestamp: admin.firestore.FieldValue.serverTimestamp(), // Use server timestamp
+        system,
+        userId: uid,
+        readings: current, // Store the readings used for calculation
+        // Optional: store targets used
+        // Optional: store calculated adjustments
+      };
+      await db.collection("readings").add(readingData);
+      console.log("Reading stored successfully");
+      // --- End Store Readings ---
+
+      const response = { adjustments };
+      if (shockResult) {
+        response.shock = shockResult;
+      }
+      console.log("Calculated Adjustments:", response);
       return res.status(200).json(response);
+
     } catch (error) {
-      console.error("calculate: Error:", error.message);
-      return res.status(401).json({error: "Unauthorized",
-        details: error.message});
+      console.error("calculate error:", error);
+      // Send back a more generic error in production
+      return res.status(500).json({error: "Calculation failed", details: error.message });
     }
   });
 });

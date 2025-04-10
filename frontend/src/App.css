@@ -1,9 +1,16 @@
-/* App.css - Polished Overhaul */
+/* App.css - Polished Overhaul with Spacing & Responsiveness */
+
+/* Apply box-sizing globally */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
 
 .App {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 0 1rem; /* Add horizontal padding */
+  padding: 0 var(--space-4); /* Use space variable */
 }
 
 /* --- Header --- */
@@ -11,13 +18,13 @@ header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1.5rem 0;
-  margin-bottom: 1.5rem;
+  padding: var(--space-6) 0;
+  margin-bottom: var(--space-6);
   border-bottom: 1px solid var(--border-color);
 }
 
 header h1 {
-  font-size: 1.75rem; /* Slightly smaller */
+  font-size: 1.75rem;
   font-weight: 600;
   color: var(--text-color);
   margin: 0;
@@ -27,7 +34,7 @@ header button {
   background-color: transparent;
   color: var(--text-color-light);
   border: none;
-  padding: 0.5rem 1rem;
+  padding: var(--space-2) var(--space-4);
   border-radius: var(--border-radius-md);
   cursor: pointer;
   font-weight: 500;
@@ -43,15 +50,16 @@ header button:hover {
 nav {
   display: flex;
   justify-content: center;
-  gap: 1rem;
-  margin-bottom: 2rem;
+  flex-wrap: wrap; /* Allow wrapping on small screens */
+  gap: var(--space-4);
+  margin-bottom: var(--space-8);
 }
 
 nav button {
   background-color: var(--background-light);
   color: var(--text-color-light);
   border: 1px solid var(--border-color);
-  padding: 0.75rem 1.5rem;
+  padding: var(--space-3) var(--space-6);
   border-radius: var(--border-radius-md);
   cursor: pointer;
   font-weight: 500;
@@ -61,11 +69,10 @@ nav button {
 
 nav button:hover {
   background-color: var(--background-medium);
-  border-color: #cbd5e0; /* Slightly darker border on hover */
+  border-color: #cbd5e0;
   color: var(--text-color);
 }
 
-/* Add style for active nav button if using NavLink or similar */
 nav button.active { 
   background-color: var(--primary-color);
   color: white;
@@ -75,10 +82,10 @@ nav button.active {
 /* --- General Section Styling --- */
 .dashboard, .test-strip-upload, .test-strip-results {
   background-color: var(--background-light);
-  padding: 2rem;
+  padding: var(--space-8);
   border-radius: var(--border-radius-md);
   box-shadow: var(--shadow-md);
-  margin-bottom: 2rem;
+  margin-bottom: var(--space-8);
 }
 
 h2 {
@@ -86,7 +93,7 @@ h2 {
   font-weight: 600;
   color: var(--text-color);
   margin-top: 0;
-  margin-bottom: 1.5rem;
+  margin-bottom: var(--space-6);
   text-align: center;
 }
 
@@ -94,22 +101,23 @@ h3 {
   font-size: 1.25rem;
   font-weight: 600;
   color: var(--text-color);
-  margin-top: 1.5rem;
-  margin-bottom: 1rem;
+  margin-top: var(--space-6);
+  margin-bottom: var(--space-4);
   border-bottom: 1px solid var(--border-color);
-  padding-bottom: 0.5rem;
+  padding-bottom: var(--space-2);
 }
 
-/* --- Form Elements (Dashboard, Manual Entry) --- */
+/* --- Form Elements --- */
 form {
-  margin-top: 1rem;
+  margin-top: var(--space-4);
 }
 
 .input-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 1.5rem;
-  margin-bottom: 1.5rem;
+  /* Start with 1 column, adjust in media queries */
+  grid-template-columns: 1fr;
+  gap: var(--space-6);
+  margin-bottom: var(--space-6);
 }
 
 .input-group {
@@ -119,11 +127,11 @@ form {
 
 .input-group label {
   display: block;
-  margin-bottom: 0.5rem;
+  margin-bottom: var(--space-2);
   font-weight: 500;
   color: var(--text-color-light);
   font-size: 0.875rem;
-  text-transform: capitalize; /* Consistent casing */
+  text-transform: capitalize;
 }
 
 input[type="number"], 
@@ -131,7 +139,7 @@ input[type="text"],
 input[type="file"],
 select {
   width: 100%;
-  padding: 0.75rem 1rem;
+  padding: var(--space-3) var(--space-4);
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius-md);
   font-size: 1rem;
@@ -139,7 +147,6 @@ select {
   background-color: var(--background-light);
   box-shadow: var(--shadow-sm);
   transition: border-color 0.2s, box-shadow 0.2s;
-  box-sizing: border-box; /* Ensure padding doesn't increase size */
 }
 
 input[type="number"]:focus, 
@@ -147,19 +154,20 @@ input[type="text"]:focus,
 select:focus {
   outline: none;
   border-color: var(--primary-color);
-  box-shadow: 0 0 0 2px rgba(56, 161, 105, 0.3); /* Focus ring */
+  /* Smoother box-shadow transition for focus */
+  box-shadow: 0 0 0 3px rgba(56, 161, 105, 0.2);
+  transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out; 
 }
 
-/* Specific file input styling */
 input[type="file"] {
-  padding: 0.5rem; /* Adjust padding */
+  padding: var(--space-2); /* Adjust padding */
 }
 
 input[type="file"]::file-selector-button {
-  margin-right: 1rem;
+  margin-right: var(--space-4);
   border: none;
   background: var(--primary-color);
-  padding: 0.6rem 1rem;
+  padding: var(--space-3) var(--space-4);
   border-radius: var(--border-radius-md);
   color: #fff;
   cursor: pointer;
@@ -171,28 +179,26 @@ input[type="file"]::file-selector-button:hover {
   background: var(--primary-color-hover);
 }
 
-/* Select dropdown */
 select {
   appearance: none;
   background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%234A5568%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E');
   background-repeat: no-repeat;
-  background-position: right 1rem center;
+  background-position: right var(--space-4) center;
   background-size: 0.65em auto;
-  padding-right: 2.5rem; /* Space for arrow */
+  padding-right: var(--space-10); /* Space for arrow */
 }
 
 .system-selection {
-  margin-bottom: 1.5rem;
+  margin-bottom: var(--space-6);
 }
 
 .system-selection select {
-  min-width: 200px;
-  max-width: 300px;
+  max-width: 300px; /* Limit width */
 }
 
 /* --- Buttons --- */
 button {
-  padding: 0.75rem 1.5rem;
+  padding: var(--space-3) var(--space-6);
   border-radius: var(--border-radius-md);
   border: none;
   font-weight: 500;
@@ -206,7 +212,7 @@ button:disabled {
   cursor: not-allowed;
 }
 
-/* Primary Button Style (Calculate, Upload) */
+/* Primary Button Style */
 button[type="submit"],
 .test-strip-upload .upload-section button,
 .test-strip-results .actions button:first-of-type {
@@ -223,7 +229,7 @@ button[type="submit"]:hover:not(:disabled),
   transform: translateY(-1px);
 }
 
-/* Secondary Button Style (Show Readings, Manual Entry, Return to Dashboard) */
+/* Secondary Button Style */
 .readings-section button,
 .test-strip-upload button:not(.upload-section button),
 .test-strip-results .actions button:last-of-type {
@@ -243,21 +249,27 @@ button[type="submit"]:hover:not(:disabled),
 }
 
 /* --- Tables --- */
+.table-container {
+  width: 100%;
+  overflow-x: auto; /* Enable horizontal scrolling on small screens */
+  margin: var(--space-6) 0;
+}
+
 table {
   width: 100%;
-  border-collapse: separate; /* Use separate for border-radius on cells */
+  min-width: 600px; /* Ensure table has minimum width for scrolling */
+  border-collapse: separate;
   border-spacing: 0;
-  margin: 1.5rem 0;
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius-md);
-  overflow: hidden; /* Clip corners */
 }
 
 th,
 td {
-  padding: 1rem;
+  padding: var(--space-4);
   text-align: left;
   border-bottom: 1px solid var(--border-color);
+  white-space: nowrap; /* Prevent text wrapping in table cells */
 }
 
 tr:last-child td {
@@ -276,7 +288,7 @@ th {
 /* --- Results Page Specifics --- */
 .test-strip-results .result-image {
   text-align: center;
-  margin: 1.5rem 0 2.5rem 0;
+  margin: var(--space-6) 0 var(--space-10) 0;
 }
 
 .test-strip-results .result-image img {
@@ -289,16 +301,17 @@ th {
 
 .test-strip-results .actions {
   display: flex;
-  gap: 1rem;
+  flex-wrap: wrap; /* Allow buttons to wrap */
+  gap: var(--space-4);
   justify-content: center;
-  margin-top: 2rem;
-  padding-top: 2rem;
+  margin-top: var(--space-8);
+  padding-top: var(--space-8);
   border-top: 1px solid var(--border-color);
 }
 
 /* --- Readings & Adjustments Containers --- */
 .readings, .adjustments {
-  margin-top: 1.5rem;
+  margin-top: var(--space-6);
 }
 
 /* Color coding for adjustments table */
@@ -308,13 +321,13 @@ th {
 
 .test-strip-results .needs-adjustment td {
   color: var(--error-color);
-  font-weight: 500; /* Make adjustments stand out */
+  font-weight: 500;
 }
 
 /* Shock Treatment */
 .test-strip-results .shock-treatment {
-  margin-top: 2rem;
-  padding: 1.5rem;
+  margin-top: var(--space-8);
+  padding: var(--space-6);
   background-color: var(--error-background);
   border-radius: var(--border-radius-md);
   border: 1px solid var(--error-color);
@@ -324,7 +337,7 @@ th {
 .test-strip-results .shock-treatment h3 {
   color: var(--error-color);
   margin-top: 0;
-  margin-bottom: 0.5rem;
+  margin-bottom: var(--space-2);
   font-size: 1.1rem;
   border-bottom: none;
 }
@@ -340,8 +353,8 @@ th {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1rem;
-  margin: 2rem 0;
+  gap: var(--space-4);
+  margin: var(--space-8) 0;
 }
 
 .test-strip-upload .image-preview img {
@@ -349,21 +362,22 @@ th {
   max-height: 300px;
   height: auto;
   border-radius: var(--border-radius-md);
-  margin-top: 1rem;
+  margin-top: var(--space-4);
 }
 
 .test-strip-upload .system-selection-upload {
   display: flex;
+  flex-wrap: wrap; /* Allow wrapping */
   justify-content: center;
   align-items: center;
-  gap: 1rem; /* Gap between label and radio groups */
-  margin-bottom: 1.5rem;
+  gap: var(--space-4); /* Gap between label and radio groups */
+  margin-bottom: var(--space-6);
 }
 
 .test-strip-upload .system-selection-upload > div {
   display: flex;
   align-items: center;
-  gap: 0.5rem; /* Gap between radio and its label */
+  gap: var(--space-2); /* Gap between radio and its label */
 }
 
 .test-strip-upload .system-selection-upload label {
@@ -373,31 +387,169 @@ th {
 .test-strip-upload input[type="radio"] {
   width: auto;
   box-shadow: none;
-  accent-color: var(--primary-color); /* Style the radio button itself */
+  accent-color: var(--primary-color);
+}
+
+/* Custom Toggle Switch Styling */
+.system-selection-upload > div {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.system-selection-upload .toggle-switch-label {
+  position: relative;
+  display: inline-block;
+  width: 50px; /* Width of the toggle */
+  height: 26px; /* Height of the toggle */
+}
+
+.system-selection-upload .toggle-switch-label input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.system-selection-upload .toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc; /* Default background */
+  transition: .4s;
+  border-radius: 26px; /* Rounded */
+}
+
+.system-selection-upload .toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 20px; /* Height of the inner circle */
+  width: 20px; /* Width of the inner circle */
+  left: 3px; /* Position from left */
+  bottom: 3px; /* Position from bottom */
+  background-color: white;
+  transition: .4s;
+  border-radius: 50%; /* Circle */
+}
+
+.system-selection-upload input:checked + .toggle-slider {
+  background-color: var(--primary-color); /* Green when checked */
+}
+
+.system-selection-upload input:focus + .toggle-slider {
+  box-shadow: 0 0 1px var(--primary-color);
+}
+
+.system-selection-upload input:checked + .toggle-slider:before {
+  transform: translateX(24px); /* Move circle to the right */
+}
+
+/* Hide original radio buttons */
+.test-strip-upload input[type="radio"].original-radio {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Label text next to the toggle */
+.test-strip-upload .toggle-label-text {
+  font-weight: 500;
+  margin-left: var(--space-3);
+  cursor: pointer;
 }
 
 /* --- Loading & Error States --- */
 .loading {
-  text-align: center;
-  padding: 3rem 1rem;
+  display: flex;
+  flex-direction: column; /* Stack spinner and text */
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-12) var(--space-4);
   color: var(--text-color-light);
-  font-size: 1.1rem;
+  font-size: 1rem; /* Adjusted font size */
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid var(--background-medium); /* Light grey border */
+  border-top: 4px solid var(--primary-color); /* Green for the spinning part */
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: var(--space-4); /* Space between spinner and text */
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
 .error {
-  padding: 1rem 1.5rem;
+  padding: var(--space-4) var(--space-6);
   background-color: var(--error-background);
   border: 1px solid var(--error-color);
   color: var(--error-color);
   border-radius: var(--border-radius-md);
-  margin: 1.5rem 0;
+  margin: var(--space-6) 0;
   text-align: center;
 }
 
-/* Ensure errors in specific components use this style */
 .test-strip-upload .error,
 .test-strip-results .error,
 .readings-section .error {
-   margin-top: 1.5rem;
+   margin-top: var(--space-6);
    text-align: center;
+}
+
+/* --- Responsive Adjustments --- */
+
+/* Tablet and larger */
+@media (min-width: 768px) {
+  .input-grid {
+    /* 2 columns for medium screens */
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .dashboard, .test-strip-upload, .test-strip-results {
+    padding: var(--space-10);
+  }
+}
+
+/* Desktop */
+@media (min-width: 1024px) {
+  .input-grid {
+    /* 3 columns for larger screens */
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* Mobile specific tweaks (optional, if needed beyond defaults) */
+@media (max-width: 640px) {
+  header h1 {
+    font-size: 1.5rem;
+  }
+  nav button {
+    padding: var(--space-2) var(--space-4);
+    font-size: 0.9rem;
+  }
+  h2 {
+     font-size: 1.25rem;
+     margin-bottom: var(--space-4);
+  }
+  h3 {
+    font-size: 1.1rem;
+  }
+  button {
+    padding: var(--space-3) var(--space-5);
+    font-size: 0.95rem;
+  }
+  .dashboard, .test-strip-upload, .test-strip-results {
+    padding: var(--space-6);
+  }
+  th, td {
+    padding: var(--space-3);
+    font-size: 0.9rem;
+  }
 }

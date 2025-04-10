@@ -148,31 +148,50 @@ const TestStripUpload = () => {
       </div>
 
       <form onSubmit={handleSubmit}>
+        {/* System Selection - Styled as Toggles */}
         <div className="system-selection-upload">
-          <label>Select System:</label>
+          <label>System:</label> 
           <div>
-            <input 
-              type="radio" 
-              id="pool-upload" 
-              name="system-upload" 
-              value="pool" 
-              checked={selectedSystem === 'pool'}
-              onChange={handleSystemChange}
-              disabled={contextIsProcessing}
-            />
-            <label htmlFor="pool-upload">Pool</label>
+            <label className="toggle-switch-label" htmlFor="pool-upload">
+              <input 
+                type="radio" 
+                id="pool-upload" 
+                name="system-upload" 
+                value="pool" 
+                className="original-radio" // Class to potentially hide if needed
+                checked={selectedSystem === 'pool'}
+                onChange={(e) => setSelectedSystem(e.target.value)}
+                disabled={contextIsProcessing}
+              />
+              <span className="toggle-slider"></span>
+            </label>
+            <span 
+              className="toggle-label-text" 
+              onClick={() => !contextIsProcessing && setSelectedSystem('pool')}
+            >
+              Pool
+            </span>
           </div>
           <div>
-            <input 
-              type="radio" 
-              id="cold-plunge-upload" 
-              name="system-upload" 
-              value="cold_plunge" 
-              checked={selectedSystem === 'cold_plunge'}
-              onChange={handleSystemChange}
-              disabled={contextIsProcessing}
-            />
-            <label htmlFor="cold-plunge-upload">Cold Plunge</label>
+            <label className="toggle-switch-label" htmlFor="cold-plunge-upload">
+              <input 
+                type="radio" 
+                id="cold-plunge-upload" 
+                name="system-upload" 
+                value="cold_plunge" 
+                className="original-radio"
+                checked={selectedSystem === 'cold_plunge'}
+                onChange={(e) => setSelectedSystem(e.target.value)}
+                disabled={contextIsProcessing}
+              />
+              <span className="toggle-slider"></span>
+            </label>
+            <span 
+              className="toggle-label-text" 
+              onClick={() => !contextIsProcessing && setSelectedSystem('cold_plunge')}
+            >
+              Cold Plunge
+            </span>
           </div>
         </div>
 

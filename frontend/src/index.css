@@ -1,12 +1,14 @@
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #f4f7f9; /* Lighter background */
-  color: #2d3748; /* Darker base text color */
+  background-color: var(--background-dark);
+  color: var(--text-color);
+  font-size: 16px; /* Ensure base font size */
+  line-height: 1.5; /* Improve readability */
 }
 
 code {
@@ -20,6 +22,7 @@ code {
   --primary-color-hover: #2f855a;
   --text-color: #2d3748;
   --text-color-light: #4a5568;
+  --text-color-lighter: #718096;
   --border-color: #e2e8f0;
   --background-light: #ffffff;
   --background-medium: #f7fafc;
@@ -29,4 +32,15 @@ code {
   --border-radius-md: 8px;
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  
+  /* Spacing Scale (using rem, assumes base font-size is 16px) */
+  --space-1: 0.25rem; /* 4px */
+  --space-2: 0.5rem;  /* 8px */
+  --space-3: 0.75rem; /* 12px */
+  --space-4: 1rem;    /* 16px */
+  --space-5: 1.25rem; /* 20px */
+  --space-6: 1.5rem;  /* 24px */
+  --space-8: 2rem;    /* 32px */
+  --space-10: 2.5rem; /* 40px */
+  --space-12: 3rem;   /* 48px */
 }

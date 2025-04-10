@@ -94,46 +94,51 @@ const TestStripResults = () => {
     calculateAdjustments();
   }, [detectedReadings, setAdjustments, navigate, auth, testStripSystem]);
 
+  // Function to format adjustments for display
   const formatAdjustment = (adjustment) => {
-    // Handle shock treatment object
-    if (typeof adjustment === 'object' && adjustment !== null && 'amount' in adjustment && 'chemical' in adjustment) {
-      // Ensure amount is a number before calling toFixed
+    // Handle Shock Object: { amount, unit, product }
+    if (typeof adjustment === 'object' && adjustment !== null && 'amount' in adjustment && 'unit' in adjustment && 'product' in adjustment) {
       const amount = Number(adjustment.amount);
-      return `Add ${isNaN(amount) ? 'N/A' : amount.toFixed(1)} oz of ${adjustment.chemical}`;
+      if (isNaN(amount) || amount <= 0) return "No shock treatment needed";
+      return `Add ${amount.toFixed(1)} ${adjustment.unit} of ${adjustment.product}`;
     }
 
-    // Handle regular chemical adjustments array
-    if (Array.isArray(adjustment)) {
-      const [amountValue, direction, chemical] = adjustment;
-      // Ensure amountValue is a number
+    // Handle Chemical Adjustment Array: [amount, unit, direction, productName]
+    if (Array.isArray(adjustment) && adjustment.length === 4) {
+      const [amountValue, unit, direction, productName] = adjustment;
       const amount = Number(amountValue);
 
-      if (isNaN(amount) || amount === 0 || !direction) {
+      // Check for invalid amount or no adjustment needed
+      if (isNaN(amount) || amount <= 0 || !direction || !unit || !productName) {
         return "No adjustment needed";
       }
-      return `${direction === 'up' ? 'Add' : 'Reduce'} ${Math.abs(amount).toFixed(1)} oz of ${chemical}`;
+      
+      // Format the recommendation string
+      const action = direction === 'up' ? 'Add' : 'Reduce with'; // Using "Reduce with" might imply a specific product
+      return `${action} ${amount.toFixed(1)} ${unit} of ${productName}`;
     }
 
-    // Fallback for any other unexpected format
-    console.warn('Unexpected adjustment format:', adjustment); // Log unexpected formats
-    return "Unable to process adjustment";
+    // Fallback for unexpected formats
+    console.warn('Unexpected adjustment format received:', adjustment);
+    return "Adjustment data unavailable";
   };
 
+  // Function to determine CSS class based on adjustment
   const getRecommendationClass = (adjustment) => {
-    // Handle shock treatment object
-    if (typeof adjustment === 'object' && adjustment !== null && 'amount' in adjustment) {
+     // Handle Shock Object
+     if (typeof adjustment === 'object' && adjustment !== null && 'amount' in adjustment) {
       const amount = Number(adjustment.amount);
-      return isNaN(amount) || amount === 0 ? 'no-change' : 'needs-adjustment';
+      return isNaN(amount) || amount <= 0 ? 'no-change' : 'needs-adjustment';
     }
 
-    // Handle regular chemical adjustments array
-    if (Array.isArray(adjustment)) {
+    // Handle Chemical Adjustment Array
+    if (Array.isArray(adjustment) && adjustment.length === 4) {
       const [amountValue] = adjustment;
       const amount = Number(amountValue);
-      return isNaN(amount) || amount === 0 ? 'no-change' : 'needs-adjustment';
+      return isNaN(amount) || amount <= 0 ? 'no-change' : 'needs-adjustment';
     }
 
-    // Default class for unexpected formats
+    // Default for unexpected formats
     return '';
   };
 
@@ -179,8 +184,10 @@ const TestStripResults = () => {
         </table>
       </div>
 
+      {/* Loading state */}
       {isCalculating ? (
         <div className="loading">
+          <div className="spinner"></div>
           <p>Calculating adjustments...</p>
         </div>
       ) : calculationError ? (
@@ -194,27 +201,37 @@ const TestStripResults = () => {
         <>
           <div className="adjustments">
             <h3>Recommended Chemical Adjustments</h3>
-            <table>
-              <thead>
-                <tr>
-                  <th>Parameter</th>
-                  <th>Recommendation</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Object.entries(adjustments.adjustments || {})
-                  .filter(([chemical]) => chemical !== 'shock')
-                  .map(([parameter, adjustmentValue]) => (
-                    <tr key={parameter} className={getRecommendationClass(adjustmentValue)}>
-                      <td>{parameter}</td>
-                      <td>{formatAdjustment(adjustmentValue)}</td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
+            <div className="table-container"> {/* Ensure table is scrollable */} 
+              <table>
+                <thead>
+                  <tr>
+                    <th>Parameter</th>
+                    <th>Recommendation</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(adjustments.adjustments || {})
+                    // Filter out entries where adjustment is null or indicates no action
+                    .filter(([_, adjValue]) => adjValue && (Array.isArray(adjValue) ? Number(adjValue[0]) > 0 : false))
+                    .map(([parameter, adjustmentValue]) => (
+                      <tr key={parameter} className={getRecommendationClass(adjustmentValue)}>
+                        <td>{parameter}</td>
+                        <td>{formatAdjustment(adjustmentValue)}</td>
+                      </tr>
+                    ))}
+                    {/* Add a row if no adjustments are needed */}
+                    {Object.values(adjustments.adjustments || {}).every(adj => !adj || Number(adj[0]) <= 0) && (
+                      <tr>
+                        <td colSpan="2" style={{ textAlign: 'center', fontStyle: 'italic' }}>All parameters are within target range.</td>
+                      </tr>
+                    )}
+                </tbody>
+              </table>
+            </div> 
           </div>
 
-          {adjustments.shock && (
+          {/* Shock Treatment Section */}
+          {adjustments.shock && Number(adjustments.shock.amount) > 0 && (
             <div className="shock-treatment">
               <h3>Shock Treatment Needed</h3>
               <p>{formatAdjustment(adjustments.shock)}</p>
