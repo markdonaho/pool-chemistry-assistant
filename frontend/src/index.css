@@ -5,9 +5,28 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background-color: #f4f7f9; /* Lighter background */
+  color: #2d3748; /* Darker base text color */
 }
 
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
+}
+
+/* Define some CSS variables for consistency */
+:root {
+  --primary-color: #38a169; /* Slightly adjusted green */
+  --primary-color-hover: #2f855a;
+  --text-color: #2d3748;
+  --text-color-light: #4a5568;
+  --border-color: #e2e8f0;
+  --background-light: #ffffff;
+  --background-medium: #f7fafc;
+  --background-dark: #f4f7f9;
+  --error-color: #c53030;
+  --error-background: #fff5f5;
+  --border-radius-md: 8px;
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
 }
