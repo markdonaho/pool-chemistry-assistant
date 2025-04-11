@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, Routes, Route, Navigate } from "react-router-dom";
 import { getAuth, signOut } from "firebase/auth";
-import { getFirestore, collection, query, where, getDocs, orderBy, limit } from "firebase/firestore";
+import { getFirestore, collection, query, getDocs, orderBy, limit } from "firebase/firestore";
 import { useTestStrip } from "../context/TestStripContext";
+import { formatAdjustment, getRecommendationClass } from "../utils/formatUtils";
+import config from "../config";
 import TestStripUpload from "./TestStripUpload";
 import TestStripResults from "./TestStripResults";
 
@@ -28,7 +30,8 @@ const AppContent = () => {
   const [showReadings, setShowReadings] = useState(false);
   const [loadingReadings, setLoadingReadings] = useState(false);
   const [readingsError, setReadingsError] = useState(null);
-  const [error, setError] = useState(null);
+  const [isCalculating, setIsCalculating] = useState(false);
+  const [calculationError, setCalculationError] = useState(null);
 
   useEffect(() => {
     if (detectedReadings) {
@@ -77,7 +80,7 @@ const AppContent = () => {
           })
           .catch((err) => {
             console.error("Error fetching systems:", err.message);
-            setError("Failed to load system data. Please try again later.");
+            setCalculationError("Failed to load system data. Please try again later.");
           });
       });
     }
@@ -127,41 +130,45 @@ const AppContent = () => {
       })
       .catch((err) => {
         console.error("Logout error:", err.message);
-        setError("Logout failed. Please try again.");
+        setCalculationError("Logout failed. Please try again.");
       });
   };
 
-  const handleCalculate = (e) => {
+  const handleCalculate = async (e) => {
     e.preventDefault();
     const user = auth.currentUser;
     if (user) {
-      user.getIdToken().then((token) => {
-        fetch("https://us-central1-poolchemistryassistant.cloudfunctions.net/calculate", {
+      setIsCalculating(true);
+      setCalculationError(null);
+      setAdjustments(null);
+
+      try {
+        const token = await user.getIdToken();
+        const response = await fetch(`${config.apiUrl}${config.endpoints.calculate}`, {
           method: "POST",
           headers: {
             "Authorization": `Bearer ${token}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({ system, current }),
-        })
-          .then((response) => {
-            if (!response.ok) {
-              return response.text().then((text) => {
-                throw new Error(`HTTP error! status: ${response.status}, body: ${text}`);
-              });
-            }
-            return response.json();
-          })
-          .then((result) => {
-            console.log("Adjustments calculated:", result);
-            setAdjustments(result);
-            setError(null);
-          })
-          .catch((err) => {
-            console.error("Error calculating adjustments:", err.message);
-            setError("Failed to calculate adjustments. Please try again.");
-          });
-      });
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Calculation failed: ${response.status} ${errorText}`);
+        }
+
+        const result = await response.json();
+        console.log("Dashboard Adjustments calculated:", result);
+        setAdjustments(result);
+
+      } catch (err) {
+        console.error("Error calculating dashboard adjustments:", err.message);
+        setCalculationError("Failed to calculate adjustments. Please check values and try again.");
+        setAdjustments(null);
+      } finally {
+        setIsCalculating(false);
+      }
     }
   };
 
@@ -208,31 +215,58 @@ const AppContent = () => {
                   </div>
                 ))}
               </div>
-              <button type="submit">Calculate Adjustments</button>
+              <button type="submit" disabled={isCalculating}>
+                {isCalculating ? "Calculating..." : "Calculate Adjustments"}
+              </button>
             </form>
 
-            {adjustments && (
-              <div className="adjustments">
-                <h2>Recommended Adjustments</h2>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Chemical</th>
-                      <th>Amount</th>
-                      <th>Unit</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Object.entries(adjustments.adjustments || {}).map(([chemical, amount]) => (
-                      <tr key={chemical}>
-                        <td>{chemical}</td>
-                        <td>{amount}</td>
-                        <td>oz</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+            {calculationError && <p className="error">{calculationError}</p>}
+
+            {isCalculating && (
+               <div className="loading">
+                 <div className="spinner"></div>
+                 <p>Calculating dashboard adjustments...</p>
+               </div>
+            )}
+
+            {adjustments && !isCalculating && (
+              <>
+                <div className="adjustments">
+                  <h3>Recommended Adjustments</h3>
+                  <div className="table-container">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Parameter</th>
+                          <th>Recommendation</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(adjustments.adjustments || {})
+                          .filter(([_, adjValue]) => adjValue && (Array.isArray(adjValue) ? Number(adjValue[0]) > 0 : false))
+                          .map(([parameter, adjustmentValue]) => (
+                            <tr key={parameter} className={getRecommendationClass(adjustmentValue)}>
+                              <td>{parameter}</td>
+                              <td>{formatAdjustment(adjustmentValue)}</td>
+                            </tr>
+                          ))}
+                        {Object.values(adjustments.adjustments || {}).every(adj => !adj || Number(adj[0]) <= 0) && (
+                           <tr>
+                             <td colSpan="2" style={{ textAlign: 'center', fontStyle: 'italic' }}>All parameters are within target range.</td>
+                           </tr>
+                         )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {adjustments.shock && Number(adjustments.shock.amount) > 0 && (
+                  <div className="shock-treatment">
+                    <h3>Shock Treatment Needed</h3>
+                    <p>{formatAdjustment(adjustments.shock)}</p>
+                  </div>
+                )}
+              </>
             )}
 
             <div className="readings-section">

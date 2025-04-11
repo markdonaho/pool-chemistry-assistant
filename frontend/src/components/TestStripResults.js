@@ -3,6 +3,7 @@ import { useTestStrip } from '../context/TestStripContext';
 import { useNavigate } from 'react-router-dom';
 import { getAuth } from 'firebase/auth';
 import config from '../config';
+import { formatAdjustment, getRecommendationClass } from '../utils/formatUtils';
 
 const TestStripResults = () => {
   const { image, detectedReadings, adjustments, setAdjustments, error, testStripSystem } = useTestStrip();
@@ -94,59 +95,11 @@ const TestStripResults = () => {
     calculateAdjustments();
   }, [detectedReadings, setAdjustments, navigate, auth, testStripSystem]);
 
-  // Function to format adjustments for display
-  const formatAdjustment = (adjustment) => {
-    // Handle Shock Object: { amount, unit, product }
-    if (typeof adjustment === 'object' && adjustment !== null && 'amount' in adjustment && 'unit' in adjustment && 'product' in adjustment) {
-      const amount = Number(adjustment.amount);
-      if (isNaN(amount) || amount <= 0) return "No shock treatment needed";
-      return `Add ${amount.toFixed(1)} ${adjustment.unit} of ${adjustment.product}`;
-    }
-
-    // Handle Chemical Adjustment Array: [amount, unit, direction, productName]
-    if (Array.isArray(adjustment) && adjustment.length === 4) {
-      const [amountValue, unit, direction, productName] = adjustment;
-      const amount = Number(amountValue);
-
-      // Check for invalid amount or no adjustment needed
-      if (isNaN(amount) || amount <= 0 || !direction || !unit || !productName) {
-        return "No adjustment needed";
-      }
-      
-      // Format the recommendation string
-      const action = direction === 'up' ? 'Add' : 'Reduce with'; // Using "Reduce with" might imply a specific product
-      return `${action} ${amount.toFixed(1)} ${unit} of ${productName}`;
-    }
-
-    // Fallback for unexpected formats
-    console.warn('Unexpected adjustment format received:', adjustment);
-    return "Adjustment data unavailable";
-  };
-
-  // Function to determine CSS class based on adjustment
-  const getRecommendationClass = (adjustment) => {
-     // Handle Shock Object
-     if (typeof adjustment === 'object' && adjustment !== null && 'amount' in adjustment) {
-      const amount = Number(adjustment.amount);
-      return isNaN(amount) || amount <= 0 ? 'no-change' : 'needs-adjustment';
-    }
-
-    // Handle Chemical Adjustment Array
-    if (Array.isArray(adjustment) && adjustment.length === 4) {
-      const [amountValue] = adjustment;
-      const amount = Number(amountValue);
-      return isNaN(amount) || amount <= 0 ? 'no-change' : 'needs-adjustment';
-    }
-
-    // Default for unexpected formats
-    return '';
-  };
-
-  if (error) {
+  if (calculationError || error) {
     return (
       <div className="test-strip-results">
         <h2>Error Processing Results</h2>
-        <p className="error">{error}</p>
+        <p className="error">{calculationError || error}</p>
         <button onClick={() => navigate('/test-strip/upload')}>
           Try Again
         </button>
@@ -184,24 +137,16 @@ const TestStripResults = () => {
         </table>
       </div>
 
-      {/* Loading state */}
       {isCalculating ? (
         <div className="loading">
           <div className="spinner"></div>
           <p>Calculating adjustments...</p>
         </div>
-      ) : calculationError ? (
-        <div className="error">
-          <p>{calculationError}</p>
-          <button onClick={() => navigate('/test-strip/upload')}>
-            Try Again
-          </button>
-        </div>
       ) : adjustments ? (
         <>
           <div className="adjustments">
             <h3>Recommended Chemical Adjustments</h3>
-            <div className="table-container"> {/* Ensure table is scrollable */} 
+            <div className="table-container">
               <table>
                 <thead>
                   <tr>
@@ -211,7 +156,6 @@ const TestStripResults = () => {
                 </thead>
                 <tbody>
                   {Object.entries(adjustments.adjustments || {})
-                    // Filter out entries where adjustment is null or indicates no action
                     .filter(([_, adjValue]) => adjValue && (Array.isArray(adjValue) ? Number(adjValue[0]) > 0 : false))
                     .map(([parameter, adjustmentValue]) => (
                       <tr key={parameter} className={getRecommendationClass(adjustmentValue)}>
@@ -219,18 +163,16 @@ const TestStripResults = () => {
                         <td>{formatAdjustment(adjustmentValue)}</td>
                       </tr>
                     ))}
-                    {/* Add a row if no adjustments are needed */}
-                    {Object.values(adjustments.adjustments || {}).every(adj => !adj || Number(adj[0]) <= 0) && (
-                      <tr>
-                        <td colSpan="2" style={{ textAlign: 'center', fontStyle: 'italic' }}>All parameters are within target range.</td>
-                      </tr>
-                    )}
+                  {Object.values(adjustments.adjustments || {}).every(adj => !adj || Number(adj[0]) <= 0) && (
+                    <tr>
+                      <td colSpan="2" style={{ textAlign: 'center', fontStyle: 'italic' }}>All parameters are within target range.</td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div> 
           </div>
 
-          {/* Shock Treatment Section */}
           {adjustments.shock && Number(adjustments.shock.amount) > 0 && (
             <div className="shock-treatment">
               <h3>Shock Treatment Needed</h3>
@@ -238,7 +180,9 @@ const TestStripResults = () => {
             </div>
           )}
         </>
-      ) : null}
+      ) : (
+        !calculationError && <div className="loading"><p>Waiting for calculations...</p></div>
+      )}
 
       <div className="actions">
         <button onClick={() => navigate('/test-strip/upload')}>
