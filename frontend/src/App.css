@@ -525,7 +525,7 @@ th {
   }
 }
 
-/* Mobile specific tweaks (optional, if needed beyond defaults) */
+/* Mobile specific tweaks */
 @media (max-width: 640px) {
   header h1 {
     font-size: 1.5rem;
@@ -551,5 +551,97 @@ th {
   th, td {
     padding: var(--space-3);
     font-size: 0.9rem;
+    /* Allow text wrapping in cells on mobile */
+    white-space: normal; 
+  }
+  
+  /* Ensure table container still allows scrolling if content *forces* width */
+  .table-container {
+      overflow-x: auto; 
+  }
+  /* Remove min-width from table itself on small screens if wrapping is preferred */
+  /* table { min-width: auto; } */
+
+  /* Card/List Layout for Adjustments Table on Mobile */
+  .adjustments .table-container {
+    overflow-x: visible; /* Disable horizontal scroll for card view */
+  }
+
+  .adjustments table {
+    border: none;
+    box-shadow: none;
+    min-width: unset; /* Allow table to shrink */
+    border-radius: 0;
+    background-color: transparent;
+  }
+
+  .adjustments thead {
+    /* Hide table header, labels will be in cards */
+    display: none;
+  }
+
+  .adjustments tbody,
+  .adjustments tr,
+  .adjustments td {
+    display: block; /* Make everything block level */
+    width: 100%;
+  }
+
+  .adjustments tr {
+    background-color: var(--background-light); /* Card background */
+    border-radius: var(--border-radius-md);
+    box-shadow: var(--shadow-sm);
+    margin-bottom: var(--space-4); /* Space between cards */
+    border: 1px solid var(--border-color);
+    padding: var(--space-4);
+  }
+
+  /* Apply status background to the whole card */
+  .adjustments tr.no-change {
+    background-color: #f0fff4; 
+    border-color: #a7f3d0;
+  }
+  .adjustments tr.needs-adjustment {
+    background-color: #fff5f5;
+    border-color: #feb2b2;
+  }
+
+  .adjustments td {
+    padding: var(--space-2) 0; /* Adjust vertical padding, remove horizontal */
+    border: none; /* Remove cell borders */
+    white-space: normal; /* Ensure text wrapping is still enabled */
+    text-align: left;
+  }
+
+  .adjustments td:first-child {
+    /* Style the Parameter as the card title */
+    font-weight: 600;
+    color: var(--text-color);
+    padding-bottom: var(--space-1); 
+  }
+  
+  .adjustments td:nth-child(2) {
+     /* Style the recommendation text */
+     font-size: 0.95rem;
+     color: var(--text-color-light);
+     padding-left: var(--space-2); /* Indent slightly */
+  }
+
+  /* Apply status colors directly to text if needed, though background is clearer */
+  .adjustments tr.no-change td:nth-child(2) {
+    color: var(--primary-color); 
+  }
+  .adjustments tr.needs-adjustment td:nth-child(2) {
+    color: var(--error-color);
+  }
+
+  /* Handle the 'All parameters within range' message */
+  .adjustments tr td[colSpan="2"] {
+    padding: var(--space-4); 
+    text-align: center;
+    font-style: italic;
+    color: var(--text-color-light);
+    background-color: var(--background-medium); /* Give it a subtle background */
+    border-radius: var(--border-radius-md);
   }
 }
