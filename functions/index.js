@@ -8,7 +8,12 @@ const db = admin.firestore();
 // --- Constants ---
 const GRAMS_PER_POUND = 453.592;
 const GRAMS_PER_OZ = 28.3495;
-const GRAMS_PER_TBSP = 16; // Approx for granules (3 tsp)
+// Approximate volumetric density for common granular chemicals
+// !! VERY APPROXIMATE - Different chemicals have different densities !!
+const GRAMS_PER_TSP_APPROX = 5; 
+const GRAMS_PER_TBSP_APPROX = 16; // Approx 3 * tsp
+const TSP_PER_TBSP = 3;
+const OZ_PER_LB = 16;
 
 // --- System Definitions ---
 const systems = {
@@ -38,45 +43,111 @@ const systems = {
   },
 };
 
-// --- Chemical Definitions & Dosage ---
-const chemicals = {
-  ph_up: {
-    productName: {pool: "pH Increaser", cold_plunge: "pH Increaser"},
-    gramsPerPpmPerGallon: 0, // pH is complex, handle separately
+// --- Detailed Chemical Dosage Information --- 
+// Structure: system -> chemicalKey -> {productName, rate, rateUnit, rateVolume, rateVolumeUnit, ratePpmEffect, outputUnit}
+// ** IMPORTANT: Fill in accurate data from product labels **
+const chemicalDosages = {
+  pool: {
+    ph_up: { 
+      productName: "Pool pH Increaser (Soda Ash)",
+      // Placeholder - requires specific product data 
+      rate: 1.5, rateUnit: 'lbs', rateVolume: 10000, rateVolumeUnit: 'gal', ratePpmEffect: 0.2, // Highly dependent on TA!
+      outputUnit: 'lbs' 
+    },
+    ph_down: { 
+      productName: "Pool pH Decreaser (Dry Acid)",
+      // Placeholder
+      rate: 2, rateUnit: 'lbs', rateVolume: 10000, rateVolumeUnit: 'gal', ratePpmEffect: 0.2, // Highly dependent on TA!
+      outputUnit: 'lbs'
+    },
+    alkalinity_up: {
+      productName: "Pool Alkalinity Increaser (Sodium Bicarbonate)",
+      // Based on ~1.5 lbs per 10ppm per 10k gal
+      rate: 1.5, rateUnit: 'lbs', rateVolume: 10000, rateVolumeUnit: 'gal', ratePpmEffect: 10,
+      outputUnit: 'lbs' 
+    },
+    hardness_up: {
+      productName: "Pool Calcium Hardness Increaser (Calcium Chloride)",
+      // Based on ~1.25 lbs per 10ppm per 10k gal (adjust for purity?)
+      rate: 1.25, rateUnit: 'lbs', rateVolume: 10000, rateVolumeUnit: 'gal', ratePpmEffect: 10, 
+      outputUnit: 'lbs'
+    },
+    chlorine_up: {
+      productName: "Pool Shock (Cal Hypo based)",
+      // Based on ~2.5 oz per 1ppm per 10k gal
+      rate: 2.5, rateUnit: 'oz', rateVolume: 10000, rateVolumeUnit: 'gal', ratePpmEffect: 1,
+      outputUnit: 'oz' // Or maybe lbs for larger amounts
+    },
+    cya_up: {
+      productName: "Pool Cyanuric Acid Stabilizer",
+      // Based on ~1 lb per 10ppm per 10k gal
+      rate: 1, rateUnit: 'lbs', rateVolume: 10000, rateVolumeUnit: 'gal', ratePpmEffect: 10,
+      outputUnit: 'lbs'
+    }
+    // Add entries for reducing chemicals if needed
   },
-  ph_down: {
-    productName: {pool: "pH Decreaser", cold_plunge: "pH Decreaser"},
-    gramsPerPpmPerGallon: 0, // pH is complex, handle separately
-  },
-  alkalinity_up: {
-    productName: {pool: "PoolMate Alkalinity Increaser (Sodium Bicarbonate)",
-      cold_plunge: "SpaGuard Alkalinity Increaser"},
-    gramsPerPpmPerGallon: 0.00681,
-  },
-  hardness_up: {
-    productName: {pool: "HTH Calcium Hardness Increaser (Calcium Chloride)",
-      cold_plunge: "SpaGuard Calcium Hardness Increaser"},
-    // (Adjusting for common ~94-97% purity might increase this slightly)
-    gramsPerPpmPerGallon: 0.0058,
-  },
-  chlorine_up: {
-    // Granular chlorine rates vary significantly by % active ingredient
-    productName: {pool: "Clorox/HTH Pool Shock (Cal Hypo based)",
-      cold_plunge: "SpaGuard Chlorinating Concentrate (Dichlor based)"},
-    gramsPerPpmPerGallon: {pool: 0.0070, cold_plunge: 0.0085},
-  },
-  cya_up: {
-    productName: {pool: "HTH Cyanuric Acid Stabilizer", cold_plunge: "N/A"},
-    gramsPerPpmPerGallon: 0.00454,
-  },
+  cold_plunge: {
+    ph_up: {
+      productName: "SpaGuard pH Increaser",
+      // Placeholder - get from label
+      rate: 1, rateUnit: 'tbsp', rateVolume: 100, rateVolumeUnit: 'gal', ratePpmEffect: 0.2, // Placeholder!
+      outputUnit: 'tbsp'
+    },
+    ph_down: {
+      productName: "SpaGuard pH Decreaser",
+       // Placeholder - get from label
+      rate: 1, rateUnit: 'tsp', rateVolume: 100, rateVolumeUnit: 'gal', ratePpmEffect: 0.2, // Placeholder!
+      outputUnit: 'tsp'
+    },
+    alkalinity_up: {
+      productName: "SpaGuard Alkalinity Increaser",
+      // Placeholder - get from label
+      rate: 1, rateUnit: 'tbsp', rateVolume: 100, rateVolumeUnit: 'gal', ratePpmEffect: 10, // Placeholder!
+      outputUnit: 'tbsp' 
+    },
+    hardness_up: {
+      productName: "SpaGuard Calcium Hardness Increaser",
+      // Placeholder - get from label
+      rate: 1, rateUnit: 'tbsp', rateVolume: 100, rateVolumeUnit: 'gal', ratePpmEffect: 10, // Placeholder! 
+      outputUnit: 'tbsp'
+    },
+    chlorine_up: { // ** SpaGuard Chlorinating Concentrate **
+      productName: "SpaGuard Chlorinating Concentrate",
+      // Rate: 1/2 tsp per 100 gal aims for 3-5ppm residual. 
+      // We need ppm *increase*. Let's *estimate* 1/2 tsp raises by 4ppm in 100 gal.
+      // This is the weakest link - needs verification or a better source!
+      rate: 0.5, rateUnit: 'tsp', rateVolume: 100, rateVolumeUnit: 'gal', ratePpmEffect: 4, // Estimated PPM effect
+      outputUnit: 'tsp' // Output in teaspoons
+    },
+    // CYA likely not needed for cold plunge
+  }
 };
 
-// Special handling for pH (more complex calculation needed)
-// This is a placeholder - real pH adjustment depends heavily on TA.
-const phRates = {
-  pool: {up: 0.425, down: 0.0525},
-  cold_plunge: {up: 0.1, down: 0.01}, // Scaled down arbitrarily
-};
+// --- Unit Conversion Helpers --- 
+
+// Convert a known dosage (like lbs or tsp) to grams
+function convertToGrams(amount, unit) {
+  switch (unit.toLowerCase()) {
+    case 'lbs': return amount * GRAMS_PER_POUND;
+    case 'oz': return amount * GRAMS_PER_OZ;
+    case 'tbsp': return amount * GRAMS_PER_TBSP_APPROX;
+    case 'tsp': return amount * GRAMS_PER_TSP_APPROX;
+    case 'grams': return amount;
+    default: console.warn(`Unknown unit for gram conversion: ${unit}`); return 0;
+  }
+}
+
+// Convert grams to a desired target unit (e.g., tsp, tbsp, lbs, oz)
+function convertFromGrams(grams, targetUnit) {
+  switch (targetUnit.toLowerCase()) {
+    case 'lbs': return grams / GRAMS_PER_POUND;
+    case 'oz': return grams / GRAMS_PER_OZ;
+    case 'tbsp': return grams / GRAMS_PER_TBSP_APPROX;
+    case 'tsp': return grams / GRAMS_PER_TSP_APPROX;
+    case 'grams': return grams;
+    default: console.warn(`Unknown target unit for gram conversion: ${targetUnit}`); return 0;
+  }
+}
 
 // --- Helper Functions ---
 
@@ -101,92 +172,124 @@ async function validateToken(authHeader) {
 }
 
 /**
- * Converts grams to appropriate units based on system type.
- * @param {number} grams - Amount in grams.
- * @param {string} system - 'pool' or 'cold_plunge'.
- * @return {[number, string]} Amount and unit string.
+ * Calculates the required adjustment based on detailed chemical dosage info.
+ * @param {string} field - e.g., "Free Chlorine"
+ * @param {number} currentVal - Current ppm
+ * @param {number} targetVal - Target ppm
+ * @param {number} volumeGallons - System volume
+ * @param {string} system - 'pool' or 'cold_plunge'
+ * @returns {[number, string, string, string] | null} [amount, unit, direction, productName] or null
  */
-function convertGramsToUnit(grams, system) {
-  if (system === "cold_plunge") {
-    // Prefer Tablespoons for cold plunge
-    const tbsp = grams / GRAMS_PER_TBSP;
-    if (tbsp < 1/4) return [grams, "grams"]; // Very small amounts in grams
-    return [tbsp, "tbsp"];
-  } else {
-    // Prefer Pounds or Ounces for pool
-    const pounds = grams / GRAMS_PER_POUND;
-    if (pounds >= 0.5) return [pounds, "lbs"]; // Use pounds if >= 0.5 lbs
-    const ounces = grams / GRAMS_PER_OZ;
-    if (ounces >= 1) return [ounces, "oz"]; // Use ounces if >= 1 oz
-    return [grams, "grams"]; // Small amounts in grams
-  }
-}
-
-/**
- * Calculates adjustment for a chemical based on ppm change.
- *
- * @param {string} field - The reading field name (e.g., "Total Alkalinity").
- * @param {number} currentVal - The current reading ppm.
- * @param {number} targetVal - The target reading ppm.
- * @param {number} volumeGallons - System volume in gallons.
- * @param {string} system - 'pool' or 'cold_plunge'.
- * @return {[number, string, string, string] | null}
- */
-function calculateChemicalAdjustment(
-    field, currentVal, targetVal, volumeGallons, system) {
+function calculateChemicalAdjustment(field, currentVal, targetVal, volumeGallons, system) {
   const difference = targetVal - currentVal;
-  if (Math.abs(difference) < 0.01) return null; // Ignore tiny differences
+  // Only adjust if pH is below target (don't use this logic for lowering pH)
+  if (field === "pH" && system === "cold_plunge" && difference > 0) {
+      console.log(`Calculating SpaGuard pH Increaser for current pH: ${currentVal}`);
+      const dosageInfo = chemicalDosages.cold_plunge.ph_up;
+      let baseDosageTsp = 0;
 
-  let chemicalKey = null;
+      // Apply dosage rules from label
+      if (currentVal <= 7.1) { // Treat anything 7.1 or less as needing max dose for simplicity
+          baseDosageTsp = 2;
+      } else if (currentVal <= 7.2) {
+          baseDosageTsp = 1;
+      } else if (currentVal <= 7.3) { // Assuming target is 7.4, need some increase if 7.3
+          baseDosageTsp = 0.5;
+      }
+
+      if (baseDosageTsp > 0) {
+         // Scale dosage for actual volume
+         const volumeRatio = volumeGallons / dosageInfo.rateVolume;
+         const totalDosageNeeded = baseDosageTsp * volumeRatio;
+         
+         // Since output unit is tsp, no further conversion needed, but round?
+         const finalAmount = Math.max(0.25, Math.round(totalDosageNeeded * 4) / 4); // Round to nearest 0.25 tsp, min 0.25
+
+         console.log(`Calculated SpaGuard Dose: ${finalAmount} tsp`);
+         return [
+             finalAmount, 
+             dosageInfo.outputUnit, // tsp
+             "up", 
+             dosageInfo.productName
+         ];
+      } else {
+          console.log("Cold plunge pH doesn't require increase based on rules.");
+          return null; // No adjustment needed based on tiered rules
+      }
+  }
+
+  // --- Existing logic for other chemicals/systems --- 
+  if (Math.abs(difference) < 0.01) return null;
   const direction = difference > 0 ? "up" : "down";
+  let chemicalKey = null;
+  // REMOVED pH UP/DOWN MAPPING from here, handled above/below 
+  if (field === "Total Alkalinity" && direction === "up") chemicalKey = "alkalinity_up";
+  else if (field === "Total Hardness" && direction === "up") chemicalKey = "hardness_up";
+  else if (field === "Free Chlorine" && direction === "up") chemicalKey = "chlorine_up";
+  else if (field === "Cyanuric Acid" && direction === "up") chemicalKey = "cya_up";
+  // Handle pH down or pool pH up (using placeholder logic)
+  else if (field === "pH" && direction === "down") chemicalKey = "ph_down"; // Need dosage info for this
+  else if (field === "pH" && system === "pool" && direction === "up") chemicalKey = "ph_up"; // Need dosage info for this
+  // Add other mappings
 
-  // Map field name to chemical key
-  if (field === "Total Alkalinity" && direction === "up") {
-    chemicalKey = "alkalinity_up";
-  } else if (
-    field === "Total Hardness" && direction === "up") {
-    chemicalKey = "hardness_up";
-  } else if (
-    field === "Free Chlorine" && direction === "up") {
-    chemicalKey = "chlorine_up";
-  } else if (
-    field === "Cyanuric Acid" && direction === "up") {
-    chemicalKey = "cya_up";
-  } else if (field === "pH" && direction === "up") chemicalKey = "ph_up";
-  else if (field === "pH" && direction === "down") chemicalKey = "ph_down";
-  // Add mappings for 'down' adjustments if needed
-
-  // Special pH handling (using placeholder rates)
+  if (!chemicalKey || !chemicalDosages[system] || !chemicalDosages[system][chemicalKey]) {
+    console.warn(`No dosage info for system: ${system}, field: ${field}, direction: ${direction}`);
+    return null;
+  }
+  const dosageInfo = chemicalDosages[system][chemicalKey];
+  
+  // Placeholder for pH using phRates (Needs refinement or specific dosage info)
   if (field === "pH") {
-    const rate = difference > 0 ? phRates[system].up : phRates[system].down;
-    const amountGrams = Math.abs(difference) * volumeGallons * rate * 100;
-    const [amount, unit] = convertGramsToUnit(amountGrams, system);
-    const productName = chemicals[difference > 0 ?
-        "ph_up" : "ph_down"].productName[system];
-    return [amount, unit, direction, productName];
+      console.warn("Using placeholder pH calculation - accuracy not guaranteed.");
+      const rate = difference > 0 ? phRates[system].up : phRates[system].down;
+      // This logic is arbitrary and likely incorrect, replace with product-specific data if possible
+      const amountGrams = Math.abs(difference) * volumeGallons * rate * 100; 
+      const finalAmount = convertFromGrams(amountGrams, dosageInfo.outputUnit || 'grams'); // Convert to target unit
+      const finalUnit = dosageInfo.outputUnit || 'grams';
+      return [finalAmount, finalUnit, direction, dosageInfo.productName];
   }
 
-  if (!chemicalKey) {
-    console.warn(`No mapping for field: ${field}, direction: ${direction}`);
-    return null;
+  // --- Calculation for non-tiered chemicals (Alkalinity, Hardness, Chlorine, CYA) --- 
+  const ratePpmEffect = dosageInfo.ratePpmEffect;
+  if (!ratePpmEffect || ratePpmEffect <= 0) { // Check for valid PPM effect
+      console.warn(`Invalid ratePpmEffect for ${chemicalKey} in system ${system}`);
+      return null;
+  }
+  const requiredPpmChange = Math.abs(difference);
+  const dosageMultiplier = requiredPpmChange / ratePpmEffect;
+  const baseDosageNeeded = dosageInfo.rate * dosageMultiplier;
+  const volumeRatio = volumeGallons / dosageInfo.rateVolume;
+  const totalDosageInRateUnit = baseDosageNeeded * volumeRatio;
+
+  // Unit Conversion logic (as before)
+  let finalAmount = totalDosageInRateUnit;
+  let finalUnit = dosageInfo.rateUnit;
+  if (dosageInfo.outputUnit && dosageInfo.outputUnit.toLowerCase() !== dosageInfo.rateUnit.toLowerCase()) {
+      const gramsNeeded = convertToGrams(totalDosageInRateUnit, dosageInfo.rateUnit);
+      if (gramsNeeded === 0 && totalDosageInRateUnit !== 0) {
+         console.warn(`Gram conversion failed for ${totalDosageInRateUnit} ${dosageInfo.rateUnit}`);
+         return null; // Avoid division by zero if conversion fails
+      }
+      finalAmount = convertFromGrams(gramsNeeded, dosageInfo.outputUnit);
+      finalUnit = dosageInfo.outputUnit;
+      if (isNaN(finalAmount)) { // Check if conversion resulted in NaN
+         console.warn(`Unit conversion resulted in NaN for ${gramsNeeded}g to ${dosageInfo.outputUnit}`);
+         return null;
+      }
+  }
+  
+  if (['tsp', 'tbsp'].includes(finalUnit.toLowerCase())) {
+      finalAmount = Math.max(0.25, Math.round(finalAmount * 4) / 4); // Round to nearest 0.25, min 0.25
+  }
+  // Round lbs/oz to 1 decimal?
+  if (['lbs', 'oz'].includes(finalUnit.toLowerCase())) {
+      finalAmount = Math.round(finalAmount * 10) / 10;
   }
 
-  const chemicalInfo = chemicals[chemicalKey];
-  let rate = chemicalInfo.gramsPerPpmPerGallon;
-  if (typeof rate === "object") {
-    rate = rate[system]; // Get system specific rate if defined (like chlorine)
-  }
+  // Check for zero amount after rounding
+  if (finalAmount <= 0) return null;
 
-  if (!rate) {
-    console.warn(`No dosage for chemical: ${chemicalKey}, system: ${system}`);
-    return null;
-  }
-
-  const totalGramsNeeded = Math.abs(difference) * volumeGallons * rate;
-  const [amount, unit] = convertGramsToUnit(totalGramsNeeded, system);
-  const productName = chemicalInfo.productName[system];
-
-  return [amount, unit, direction, productName];
+  return [finalAmount, finalUnit, direction, dosageInfo.productName];
 }
 
 // --- Cloud Functions ---
@@ -225,14 +328,13 @@ exports.calculate = functions.https.onRequest((req, res) => {
       const volume = systems[system].volume;
       const targets = systems[system].targets;
 
-      const adjustments = {};
+      const calculatedAdjustments = {};
       let needsShock = false;
 
       console.log(`Calculating for system: ${system}, volume: ${volume}`);
       console.log("Current Readings:", current);
       console.log("Target Readings:", targets);
 
-      // Iterate through TARGETS to ensure we calculate for relevant fields
       for (const field in targets) {
         if (Object.prototype.hasOwnProperty.call(targets, field) &&
             Object.prototype.hasOwnProperty.call(current, field)) {
@@ -250,14 +352,10 @@ exports.calculate = functions.https.onRequest((req, res) => {
               currentVal,
               targetVal,
               volume,
-              system,
+              system
           );
 
-          if (adj) {
-            adjustments[field] = adj;
-          } else {
-            adjustments[field] = [0, null, null, null];
-          }
+          calculatedAdjustments[field] = adj || [0, null, null, null];
 
           // Basic Shock Logic (Example - needs refinement)
           const totalChlorine = parseFloat(current["Total Chlorine"]);
@@ -278,19 +376,35 @@ exports.calculate = functions.https.onRequest((req, res) => {
       let shockResult = null;
       if (needsShock) {
         console.log("Shock treatment indicated.");
-        const shockTargetPpm = system === "pool" ? 10 : 5;
-        const chlorineRate =
-          chemicals.chlorine_up.gramsPerPpmPerGallon[system];
-        const shockGrams = shockTargetPpm * volume * chlorineRate;
-        const [shockAmountConverted, shockUnit] =
-          convertGramsToUnit(shockGrams, system);
-        const shockProductName =
-         chemicals.chlorine_up.productName[system] + " (Shock Dose)";
-        shockResult = {
-          amount: shockAmountConverted,
-          unit: shockUnit,
-          product: shockProductName,
-        };
+        const shockKey = "chlorine_up"; // Assuming shock uses the chlorine_up chemical
+        if (chemicalDosages[system] && chemicalDosages[system][shockKey]) {
+           const shockDosageInfo = chemicalDosages[system][shockKey];
+           const shockTargetPpmBoost = system === 'pool' ? 10 : 5; // Desired *increase* in ppm for shock
+           
+           // Calculate dosage needed for the boost
+           const dosageMultiplier = shockTargetPpmBoost / shockDosageInfo.ratePpmEffect;
+           const baseDosageNeeded = shockDosageInfo.rate * dosageMultiplier;
+           const volumeRatio = volume / shockDosageInfo.rateVolume;
+           const totalDosageInRateUnit = baseDosageNeeded * volumeRatio;
+
+           // Convert to output unit
+           let shockAmountConverted = totalDosageInRateUnit;
+           let shockUnit = shockDosageInfo.rateUnit;
+           if (shockDosageInfo.outputUnit && shockDosageInfo.outputUnit.toLowerCase() !== shockDosageInfo.rateUnit.toLowerCase()) {
+               const shockGrams = convertToGrams(totalDosageInRateUnit, shockDosageInfo.rateUnit);
+               shockAmountConverted = convertFromGrams(shockGrams, shockDosageInfo.outputUnit);
+               shockUnit = shockDosageInfo.outputUnit;
+           }
+
+           const shockProductName = shockDosageInfo.productName + " (Shock Dose)";
+           shockResult = {
+               amount: shockAmountConverted,
+               unit: shockUnit,
+               product: shockProductName,
+           };
+        } else {
+           console.warn(`Cannot calculate shock: Missing dosage info for ${shockKey} in system ${system}`);
+        }
       }
 
       // --- Store Readings (Consider refining what is stored) ---
@@ -307,7 +421,7 @@ exports.calculate = functions.https.onRequest((req, res) => {
       console.log("Reading stored successfully");
       // --- End Store Readings ---
 
-      const response = {adjustments};
+      const response = {adjustments: calculatedAdjustments};
       if (shockResult) {
         response.shock = shockResult;
       }
