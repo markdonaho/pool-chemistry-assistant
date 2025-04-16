@@ -74,11 +74,11 @@ const chemicalDosages = {
       outputUnit: "lbs",
     },
     chlorine_up: {
-      productName: "Pool Shock (Cal Hypo based)",
-      // Based on ~2.5 oz per 1ppm per 10k gal
-      rate: 2.5, rateUnit: "oz", rateVolume: 10000,
-      rateVolumeUnit: "gal", ratePpmEffect: 1,
-      outputUnit: "oz", // Or maybe lbs for larger amounts
+      productName: "HTH 3\" Chlorine Tabs",
+      calculationType: "check_feeder_tabs", // Signal action-based logic
+      rate: 1, rateUnit: "tab", rateVolume: 10000, // For reference (weekly dose)
+      rateVolumeUnit: "gal", ratePpmEffect: 0, // Not used for immediate calculation
+      outputUnit: "tab(s)" 
     },
     cya_up: {
       productName: "Pool Cyanuric Acid Stabilizer",
@@ -222,6 +222,17 @@ function calculateChemicalAdjustment(
   const direction = difference > 0 ? "up" : "down";
 
   // --- Specific Calculation Types First ---
+
+  // NEW: Handle Pool FC with Tabs
+  if (field === "Free Chlorine" && system === "pool" && direction === "up") {
+    const dosageInfo = chemicalDosages.pool.chlorine_up;
+    if (dosageInfo.calculationType === "check_feeder_tabs" && currentVal < targetVal) {
+      console.log(`Low pool FC (${currentVal} ppm), recommending check/add HTH 3" Tabs.`);
+      // Return nominal amount/unit; formatting function provides real instructions
+      return [1, dosageInfo.outputUnit, "up", dosageInfo.productName]; 
+    }
+  } 
+  // END NEW BLOCK
 
   // SpaGuard pH Increaser (Cold Plunge)
   if (field === "pH" && system === "cold_plunge" && direction === "up") {
@@ -617,7 +628,7 @@ exports.getReadings = functions.https.onRequest((req, res) => {
       const readingsSnapshot = await admin.firestore()
           .collection("readings")
           .orderBy("date", "desc")
-          .limit(10)
+          .limit(1000)
           .get();
 
       const readings = [];
