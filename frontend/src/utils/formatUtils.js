@@ -40,6 +40,8 @@ export const formatAdjustment = (adjustment) => {
       instructions = "Ensure Total Alkalinity is >= 125 ppm. Sprinkle into water with pump running. Run pump for 30 mins.";
     } else if (productName === "SpaGuard Total Alkalinity Increaser") {
       instructions = "Pour directly into spa water with pump running on high speed. Run pump for 30 mins.";
+    } else if (productName === "SpaGuard Calcium Hardness Increaser") {
+      instructions = "With pump running at high speed, scatter the required amount of product over the spa water and continue running pump for 30 minutes.";
     }
     // Add more specific instructions for other chemicals here
 

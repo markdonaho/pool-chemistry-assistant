@@ -116,10 +116,11 @@ const chemicalDosages = {
     },
     hardness_up: {
       productName: "SpaGuard Calcium Hardness Increaser",
-      // Placeholder - get from label
-      rate: 1, rateUnit: "tbsp", rateVolume: 100,
-      rateVolumeUnit: "gal", ratePpmEffect: 10, // Placeholder!
-      outputUnit: "tbsp",
+      // Dosage: 1 tbsp / 100 gal raises hardness by 25 ppm
+      rate: 1, rateUnit: "tbsp", rateVolume: 100, 
+      rateVolumeUnit: "gal", ratePpmEffect: 25, 
+      outputUnit: "tbsp"
+      // No specific calculationType needed, uses standard PPM logic
     },
     chlorine_up: {
       productName: "SpaGuard Chlorinating Concentrate",
