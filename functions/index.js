@@ -94,9 +94,9 @@ const chemicalDosages = {
       productName: "SpaGuard pH Increaser",
       calculationType: "tiered_ph_up", // Signal specific tiered logic
       // Base rate info (lowest tier) for reference only
-      rate: 0.5, rateUnit: "tsp", rateVolume: 100, rateVolumeUnit: "gal", 
+      rate: 0.5, rateUnit: "tsp", rateVolume: 100, rateVolumeUnit: "gal",
       ratePpmEffect: 0, // Not applicable
-      outputUnit: "tsp"
+      outputUnit: "tsp",
     },
     ph_down: {
       productName: "SpaGuard pH Decreaser",
@@ -107,11 +107,12 @@ const chemicalDosages = {
       outputUnit: "tsp",
     },
     alkalinity_up: {
-      productName: "SpaGuard Alkalinity Increaser",
-      // Placeholder - get from label
-      rate: 1, rateUnit: "tbsp", rateVolume: 100,
-      rateVolumeUnit: "gal", ratePpmEffect: 10, // Placeholder!
+      productName: "SpaGuard Total Alkalinity Increaser",
+      // Dosage: 1 tbsp / 100 gal raises TA by 25 ppm
+      rate: 1, rateUnit: "tbsp", rateVolume: 100, rateVolumeUnit: "gal",
+      ratePpmEffect: 25,
       outputUnit: "tbsp",
+      // No specific calculationType needed, uses standard PPM logic
     },
     hardness_up: {
       productName: "SpaGuard Calcium Hardness Increaser",

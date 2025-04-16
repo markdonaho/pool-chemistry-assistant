@@ -33,11 +33,13 @@ export const formatAdjustment = (adjustment) => {
 
     // Add specific instructions based on product name
     if (productName === "SpaGuard Chlorinating Concentrate") {
-      instructions = "Repeat dose every 15-20 mins until 3-5 ppm residual is achieved.";
+      instructions = "Repeat dose every 15-20 mins until 2-3 ppm residual is achieved.";
     } else if (productName === "SpaGuard pH Increaser") {
       instructions = "Sprinkle into spa water with pump running on high speed. Run pump for 30 mins.";
     } else if (productName === "SpaGuard pH Decreaser") {
-      instructions = "Ensure TA is >= 125 ppm. Sprinkle into water (aerator off) with pump running. Run pump for 30 mins.";
+      instructions = "Ensure Total Alkalinity is >= 125 ppm. Sprinkle into water with pump running. Run pump for 30 mins.";
+    } else if (productName === "SpaGuard Total Alkalinity Increaser") {
+      instructions = "Pour directly into spa water with pump running on high speed. Run pump for 30 mins.";
     }
     // Add more specific instructions for other chemicals here
 
