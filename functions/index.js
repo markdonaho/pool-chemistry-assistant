@@ -436,24 +436,8 @@ function calculateChemicalAdjustment(
       console.log(
           `Calculated Pool Mate pH Up Dose: ${finalAmount} ${finalUnit}`);
 
-      // Check if the actual pH difference is very large (exceeds chart max)
-      const needsRetest = phDiff > 7.0;
-      if (needsRetest) {
-        console.log(`Large pH difference (${phDiff.toFixed(1)} > 7.0), 
-        recommending re-test after applying max chart dose (Level 7).`);
-        const maxDoseOz = getDosageOz(7, volumeGallons);
-        if (maxDoseOz === null) return null;
-        if (maxDoseOz >= 16) {
-          finalAmount = Math.round((maxDoseOz / 16) * 10) / 10;
-          finalUnit = "lbs";
-        } else {
-          finalAmount = Math.round(maxDoseOz * 10) / 10;
-          finalUnit = "oz";
-        }
-        return [finalAmount, finalUnit, "up", dosageInfo.productName, true];
-      } else {
-        return [finalAmount, finalUnit, "up", dosageInfo.productName];
-      }
+      // Return the calculated dose based on interpolation
+      return [finalAmount, finalUnit, "up", dosageInfo.productName];
     }
   } else if (field === "pH" && system === "pool" && direction === "down") {
     console.log(`Calculating Clorox pH Down for current pH: ${currentVal}`);
