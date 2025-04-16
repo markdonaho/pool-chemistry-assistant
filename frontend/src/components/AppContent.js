@@ -247,7 +247,7 @@ const AppContent = () => {
                           .map(([parameter, adjustmentValue]) => (
                             <tr key={parameter} className={getRecommendationClass(adjustmentValue)}>
                               <td>{parameter}</td>
-                              <td>{formatAdjustment(adjustmentValue)}</td>
+                              <td>{formatAdjustment(parameter, adjustmentValue, system).recommendation}</td>
                             </tr>
                           ))}
                         {Object.values(adjustments.adjustments || {}).every(adj => !adj || Number(adj[0]) <= 0) && (

@@ -76,9 +76,9 @@ const chemicalDosages = {
     chlorine_up: {
       productName: "HTH 3\" Chlorine Tabs",
       calculationType: "check_feeder_tabs", // Signal action-based logic
-      rate: 1, rateUnit: "tab", rateVolume: 10000, // For reference (weekly dose)
-      rateVolumeUnit: "gal", ratePpmEffect: 0, // Not used for immediate calculation
-      outputUnit: "tab(s)" 
+      rate: 1, rateUnit: "tab", rateVolume: 10000, // For reference
+      rateVolumeUnit: "gal", ratePpmEffect: 0, // Not used for calculation
+      outputUnit: "tab(s)",
     },
     cya_up: {
       productName: "Pool Cyanuric Acid Stabilizer",
@@ -226,12 +226,14 @@ function calculateChemicalAdjustment(
   // NEW: Handle Pool FC with Tabs
   if (field === "Free Chlorine" && system === "pool" && direction === "up") {
     const dosageInfo = chemicalDosages.pool.chlorine_up;
-    if (dosageInfo.calculationType === "check_feeder_tabs" && currentVal < targetVal) {
-      console.log(`Low pool FC (${currentVal} ppm), recommending check/add HTH 3" Tabs.`);
-      // Return nominal amount/unit; formatting function provides real instructions
-      return [1, dosageInfo.outputUnit, "up", dosageInfo.productName]; 
+    if (dosageInfo.calculationType ===
+      "check_feeder_tabs" && currentVal < targetVal) {
+      console.log(`Low pool FC (${
+        currentVal} ppm), recommending check/add HTH 3" Tabs.`);
+      // Return nominal unit; formatting function provides real instructions
+      return [1, dosageInfo.outputUnit, "up", dosageInfo.productName];
     }
-  } 
+  }
   // END NEW BLOCK
 
   // SpaGuard pH Increaser (Cold Plunge)
