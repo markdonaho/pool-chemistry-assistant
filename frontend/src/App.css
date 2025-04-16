@@ -644,4 +644,91 @@ th {
     background-color: var(--background-medium); /* Give it a subtle background */
     border-radius: var(--border-radius-md);
   }
+
+  /* --- Card/List Layout for Tables on Mobile --- */
+
+  /* General Table Reset for Card View */
+  .adjustments table,
+  .readings table {
+    border: none;
+    box-shadow: none;
+    min-width: unset;
+    border-radius: 0;
+    background-color: transparent;
+  }
+
+  .adjustments thead,
+  .readings thead {
+    display: none; /* Hide headers */
+  }
+
+  .adjustments tbody,
+  .readings tbody,
+  .adjustments tr,
+  .readings tr,
+  .adjustments td,
+  .readings td {
+    display: block;
+    width: 100%;
+    text-align: left; /* Ensure text aligns left */
+  }
+
+  .adjustments tr,
+  .readings tr {
+    background-color: var(--background-light);
+    border-radius: var(--border-radius-md);
+    box-shadow: var(--shadow-sm);
+    margin-bottom: var(--space-4);
+    border: 1px solid var(--border-color);
+    padding: var(--space-4);
+  }
+  
+  .adjustments td,
+  .readings td {
+    padding: var(--space-1) 0 var(--space-2) 0; /* Adjust vertical padding */
+    border: none;
+    white-space: normal; /* Allow wrapping */
+  }
+
+  /* --- Adjustments Table Card Specifics --- */
+  .adjustments .table-container { overflow-x: visible; }
+  .adjustments tr.no-change { background-color: #f0fff4; border-color: #a7f3d0; }
+  .adjustments tr.needs-adjustment { background-color: #fff5f5; border-color: #feb2b2; }
+  .adjustments td:first-child { font-weight: 600; color: var(--text-color); padding-bottom: var(--space-1); }
+  .adjustments td:nth-child(2) { font-size: 0.95rem; color: var(--text-color-light); padding-left: var(--space-2); }
+  .adjustments tr.no-change td:nth-child(2) { color: var(--primary-color); }
+  .adjustments tr.needs-adjustment td:nth-child(2) { color: var(--error-color); }
+  .adjustments tr td[colSpan="2"] { padding: var(--space-4); text-align: center; font-style: italic; color: var(--text-color-light); background-color: var(--background-medium); border-radius: var(--border-radius-md); }
+
+  /* --- Previous Readings Table Card Specifics --- */
+  .readings .table-container { overflow-x: visible; }
+
+  .readings td {
+      border-bottom: 1px dashed var(--border-color); /* Add subtle separator between data points */
+      padding-left: var(--space-2); /* Indent data points */
+  }
+  .readings tr td:last-child {
+      border-bottom: none; /* No border after last item */
+  }
+  
+  .readings td:first-child {
+      /* Style the Date as the card title */
+      font-weight: 600;
+      color: var(--text-color);
+      padding-left: 0; /* No indent for title */
+      padding-bottom: var(--space-2);
+      border-bottom: none; /* No separator after title */
+      font-size: 1rem;
+  }
+
+  /* Add labels using ::before pseudo-elements */
+  /* We need to know the order of columns in the HTML table */
+  .readings td:nth-of-type(2)::before { content: "pH: "; font-weight: 500; color: var(--text-color-lighter); }
+  .readings td:nth-of-type(3)::before { content: "Total Cl: "; font-weight: 500; color: var(--text-color-lighter); }
+  .readings td:nth-of-type(4)::before { content: "Free Cl: "; font-weight: 500; color: var(--text-color-lighter); }
+  .readings td:nth-of-type(5)::before { content: "Hardness: "; font-weight: 500; color: var(--text-color-lighter); }
+  .readings td:nth-of-type(6)::before { content: "Alkalinity: "; font-weight: 500; color: var(--text-color-lighter); }
+  .readings td:nth-of-type(7)::before { content: "CYA: "; font-weight: 500; color: var(--text-color-lighter); }
+  .readings td:nth-of-type(8)::before { content: "Bromine: "; font-weight: 500; color: var(--text-color-lighter); }
+  /* Add more if there are other columns */
 }
