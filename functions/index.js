@@ -24,7 +24,6 @@ const systems = {
       "pH": 7.4,
       "Bromine": 2, // ppm
       "Cyanuric Acid": 40, // ppm
-      "Total Chlorine": 3, // ppm
     },
   },
   pool: {
@@ -36,7 +35,6 @@ const systems = {
       "pH": 7.4,
       "Bromine": 2, // ppm
       "Cyanuric Acid": 40, // ppm
-      "Total Chlorine": 3, // ppm
     },
   },
 };
@@ -94,16 +92,18 @@ const chemicalDosages = {
   cold_plunge: {
     ph_up: {
       productName: "SpaGuard pH Increaser",
-      // Base rate info from label (used in custom logic below)
-      rate: 1, rateUnit: "tsp", rateVolume: 100, rateVolumeUnit: "gal",
-      ratePpmEffect: 0, // Not applicable/used for tiered pH logic
-      outputUnit: "tsp",
+      calculationType: "tiered_ph_up", // Signal specific tiered logic
+      // Base rate info (lowest tier) for reference only
+      rate: 0.5, rateUnit: "tsp", rateVolume: 100, rateVolumeUnit: "gal", 
+      ratePpmEffect: 0, // Not applicable
+      outputUnit: "tsp"
     },
     ph_down: {
       productName: "SpaGuard pH Decreaser",
-      // Placeholder - get from label
-      rate: 1, rateUnit: "tsp", rateVolume: 100,
-      rateVolumeUnit: "gal", ratePpmEffect: 0.2, // Placeholder!
+      calculationType: "tiered_ph_down", // Signal specific tiered logic
+      // Base rate info (lowest tier) for reference only
+      rate: 0.5, rateUnit: "tsp", rateVolume: 200, rateVolumeUnit: "gal",
+      ratePpmEffect: 0, // Not applicable
       outputUnit: "tsp",
     },
     alkalinity_up: {
@@ -120,13 +120,25 @@ const chemicalDosages = {
       rateVolumeUnit: "gal", ratePpmEffect: 10, // Placeholder!
       outputUnit: "tbsp",
     },
-    chlorine_up: { // ** SpaGuard Chlorinating Concentrate **
+    chlorine_up: {
       productName: "SpaGuard Chlorinating Concentrate",
-      // Rate: 1/2 tsp per 100 gal aims for 3-5ppm residual.
-      // This is the weakest link - needs verification or a better source!
-      rate: 0.5, rateUnit: "tsp", rateVolume: 100,
-      rateVolumeUnit: "gal", ratePpmEffect: 4, // Estimated PPM effect
-      outputUnit: "tsp", // Output in teaspoons
+      calculationType: "residual_target",
+      routineDoseAmount: 0.5,
+      routineDoseUnit: "tsp",
+      routineDoseVolume: 100,
+      routineDoseVolumeUnit: "gal",
+      targetResidualMinPpm: 2,
+      targetResidualMaxPpm: 3,
+      outputUnit: "tsp",
+    },
+    shock_treatment: { // ** SpaGuard Enhanced Shock **
+      productName: "SpaGuard Enhanced Shock",
+      calculationType: "fixed_rate_shock", // Signal specific calculation
+      doseAmount: 3, // 3 tbsp
+      doseUnit: "tbsp",
+      doseVolume: 500, // per 500 gal
+      doseVolumeUnit: "gal",
+      outputUnit: "tbsp", // Rec in tbsp (or maybe tsp for smaller amounts)
     },
     // CYA likely not needed for cold plunge
   },
@@ -193,9 +205,10 @@ async function validateToken(authHeader) {
 
 /**
  * Calculates the required adjustment based on detailed chemical dosage info.
+ * Handles standard ppm-based adjustments and logic like residual targets.
  * @param {string} field - e.g., "Free Chlorine"
  * @param {number} currentVal - Current ppm
- * @param {number} targetVal - Target ppm
+ * @param {number} targetVal - Target ppm (from systems config)
  * @param {number} volumeGallons - System volume
  * @param {string} system - 'pool' or 'cold_plunge'
  * @return {[number, string, string, string] | null}
@@ -204,85 +217,211 @@ async function validateToken(authHeader) {
 function calculateChemicalAdjustment(
     field, currentVal, targetVal, volumeGallons, system) {
   const difference = targetVal - currentVal;
-  if (Math.abs(difference) < 0.01) return null;
   const direction = difference > 0 ? "up" : "down";
 
-  // Find the chemical key (e.g., 'chlorine_up', 'ph_down')
+  // --- Specific Calculation Types First ---
+
+  // SpaGuard pH Increaser (Cold Plunge)
+  if (field === "pH" && system === "cold_plunge" && direction === "up") {
+    console.log(
+        `Calculating SpaGuard pH Increaser for current pH: ${currentVal}`);
+    const dosageInfo = chemicalDosages.cold_plunge.ph_up;
+    let baseDosageTsp = 0;
+    if (currentVal <= 7.1) baseDosageTsp = 2;
+    else if (currentVal <= 7.2) baseDosageTsp = 1;
+    else if (currentVal < targetVal) baseDosageTsp = 0.5; // Only add if below
+
+    if (baseDosageTsp > 0) {
+      const volumeRatio = volumeGallons / dosageInfo.rateVolume;
+      const totalDosageNeeded = baseDosageTsp * volumeRatio;
+      const finalAmount = Math.max(0.25, Math.round(totalDosageNeeded * 4) / 4);
+      console.log(`Calculated SpaGuard pH Up Dose: ${finalAmount} tsp`);
+      return [finalAmount, dosageInfo.outputUnit, "up", dosageInfo.productName];
+    } else {
+      console.log("Cold plunge pH doesn't require increase.");
+      return null;
+    }
+  } else if (
+    field === "pH" && system === "cold_plunge" && direction === "down") {
+    console.log(
+        `Calculating SpaGuard pH Decreaser for current pH: ${currentVal}`);
+    const dosageInfo = chemicalDosages.cold_plunge.ph_down;
+    let baseDosageTsp = 0;
+
+    // Apply dosage rules from label (pH range is upper bound)
+    if (currentVal > 8.4) { // pH 8.4 and above
+      baseDosageTsp = 2;
+    } else if (currentVal > 8.0) { // pH 8.0+ to 8.4
+      baseDosageTsp = 1.5;
+    } else if (currentVal > 7.8) { // pH 7.8+ to 8.0
+      baseDosageTsp = 0.75;
+    } else if (currentVal > 7.6) { // pH 7.6+ to 7.8
+      baseDosageTsp = 0.5;
+    } // No action needed if 7.6 or below (within target or already low)
+
+    if (baseDosageTsp > 0) {
+      const volumeRatio = volumeGallons / dosageInfo.rateVolume;
+      const totalDosageNeeded = baseDosageTsp * volumeRatio;
+      const finalAmount = Math.max(0.25, Math.round(totalDosageNeeded * 4) / 4);
+      console.log(`Calculated SpaGuard pH Down Dose: ${finalAmount} tsp`);
+      return [
+        finalAmount, dosageInfo.outputUnit, "down", dosageInfo.productName];
+    } else {
+      console.log("Cold plunge pH doesn't require decrease.");
+      return null;
+    }
+  } else if (field === "Free Chlorine" &&
+    system === "cold_plunge" && direction === "up") {
+    const dosageInfo = chemicalDosages.cold_plunge.chlorine_up;
+    if (dosageInfo.calculationType === "residual_target") {
+      console.log(
+          `Calculating SpaGuard Concentrate for current FC: ${currentVal}`);
+      const minResidual = dosageInfo.targetResidualMinPpm;
+      if (currentVal < minResidual) {
+        const baseDose = dosageInfo.routineDoseAmount;
+        const doseVolume = dosageInfo.routineDoseVolume;
+        const doseUnit = dosageInfo.routineDoseUnit;
+        const volumeRatio = volumeGallons / doseVolume;
+        const totalDosageNeeded = baseDose * volumeRatio;
+        const finalAmount =
+        Math.max(0.25, Math.round(totalDosageNeeded * 4) / 4);
+        console.log(`Recommended dose: ${finalAmount} ${doseUnit}`);
+        return [finalAmount, doseUnit, "up", dosageInfo.productName];
+      } else {
+        console.log("Cold plunge FC at or above minimum residual.");
+        return null;
+      }
+    }
+  }
+
+  // --- Standard PPM Calculation Logic (Fallback) ---
+  // Find the chemical key for standard adjustments
   let chemicalKey = null;
   if (field === "Total Alkalinity" && direction === "up") {
     chemicalKey = "alkalinity_up";
   } else if (field === "Total Hardness" && direction === "up") {
     chemicalKey = "hardness_up";
-  } else if (field === "Free Chlorine" && direction === "up") {
+  } else if (
+    field === "Free Chlorine" && direction === "up" && system === "pool") {
     chemicalKey = "chlorine_up";
-  } else if (field === "Cyanuric Acid" && direction === "up") {
-    chemicalKey = "cya_up";
-  } else if (field === "pH" && direction === "up") {
-    chemicalKey = "ph_up";
-  } else if (field === "pH" && direction === "down") {
-    chemicalKey = "ph_down";
+  } else if (
+    field === "Cyanuric Acid" && direction === "up") chemicalKey = "cya_up";
+  // Use standard logic for Pool pH or if specific tiered logic didn't apply
+  else if (field === "pH" && system === "pool") {
+    chemicalKey = direction === "up" ? "ph_up" : "ph_down";
   }
-  // Add other mappings (especially for 'down') as needed
-
+  // Get dosage info for standard calculation
   if (!chemicalKey || !chemicalDosages[system] ||
     !chemicalDosages[system][chemicalKey]) {
-    console.warn(`No dosage info found for system: ${system},
-      field: ${field}, direction: ${direction}`);
+    if (Math.abs(difference) > 0.01) {
+      console.warn(
+          `No STANDARD dosage info for: ${system}, ${field}, ${direction}`);
+    }
     return null;
   }
-
   const dosageInfo = chemicalDosages[system][chemicalKey];
 
-  // --- Dosage Calculation ---
-  // 1. How much ppm change does the standard rate achieve?
+  // --- Handle Specific Calculation Types ---
+  if (dosageInfo.calculationType === "residual_target" &&
+    field === "Free Chlorine" && system === "cold_plunge") {
+    console.log(
+        `Calculating SpaGuard Concentrate for current FC: ${currentVal}`);
+    const minResidual = dosageInfo.targetResidualMinPpm; // e.g., 3 ppm
+
+    // If current chlorine is below the minimum target residual
+    if (currentVal < minResidual) {
+      const baseDose = dosageInfo.routineDoseAmount; // e.g., 0.5 tsp
+      const doseVolume = dosageInfo.routineDoseVolume; // e.g., 100 gal
+      const doseUnit = dosageInfo.routineDoseUnit; // e.g., "tsp"
+
+      // Scale dose for actual volume
+      const volumeRatio = volumeGallons / doseVolume;
+      const totalDosageNeeded = baseDose * volumeRatio;
+
+      // Round to nearest 0.25 tsp, min 0.25
+      const finalAmount = Math.max(0.25, Math.round(totalDosageNeeded * 4) / 4);
+
+      console.log(`Recommended dose: ${finalAmount} ${doseUnit}`);
+      return [
+        finalAmount,
+        doseUnit, // Use the dose unit directly
+        "up", // Implied direction
+        dosageInfo.productName,
+      ];
+    } else {
+      console.log("Cold plunge FC is at or above minimum residual target.");
+      return null; // No adjustment needed if already in range
+    }
+  }
+
+  // --- Standard PPM-Based Calculation (Refined) ---
+  // Only proceed if it's NOT the special case handled above
   const ratePpmEffect = dosageInfo.ratePpmEffect;
-  // 2. How much standard rate dosage is needed for the required ppm change?
+  if (ratePpmEffect ===
+     undefined || ratePpmEffect === null || ratePpmEffect <= 0) {
+    // Check if it's pH - pH uses separate logic currently
+    if (field === "pH") {
+      // TODO: Implement proper pH calculation based on TA and product data
+      console.warn(`Using pH logic for ${system} - accuracy not guaranteed.`);
+      // Return null or a placeholder based on phRates if absolutely needed
+      return null;
+    } else {
+      console.warn(
+          `Invalid or missing ratePpmEffect for ${chemicalKey} in ${system}`);
+      return null;
+    }
+  }
+
+  if (Math.abs(difference) < 0.01) return null; // Ignore tiny diff for ppm calc
+
   const requiredPpmChange = Math.abs(difference);
   const dosageMultiplier = requiredPpmChange / ratePpmEffect;
-  // 3. Scale the standard rate amount by the multiplier
   const baseDosageNeeded = dosageInfo.rate * dosageMultiplier;
-  // 4. Scale this dosage for the actual system volume vs the rate's volume
   const volumeRatio = volumeGallons / dosageInfo.rateVolume;
   const totalDosageInRateUnit = baseDosageNeeded * volumeRatio;
 
-  // --- Unit Conversion (if outputUnit differs from rateUnit) ---
+  // Unit Conversion logic (as before)
   let finalAmount = totalDosageInRateUnit;
   let finalUnit = dosageInfo.rateUnit;
-
   if (dosageInfo.outputUnit && dosageInfo.outputUnit.toLowerCase() !==
   dosageInfo.rateUnit.toLowerCase()) {
-    // Convert the calculated dosage (in rateUnit) to grams first
-    const gramsNeeded =
-    convertToGrams(totalDosageInRateUnit, dosageInfo.rateUnit);
-    // Then convert grams to the desired outputUnit
+    const gramsNeeded = convertToGrams(
+        totalDosageInRateUnit, dosageInfo.rateUnit);
+    if (gramsNeeded === 0 && totalDosageInRateUnit !== 0) {
+      console.warn(`Gram conversion failed: ${totalDosageInRateUnit}
+         ${dosageInfo.rateUnit}`);
+      return null;
+    }
     finalAmount = convertFromGrams(gramsNeeded, dosageInfo.outputUnit);
     finalUnit = dosageInfo.outputUnit;
+    if (isNaN(finalAmount)) {
+      console.warn(`Unit NaN: ${gramsNeeded}g to ${dosageInfo.outputUnit}`);
+      return null;
+    }
   }
 
-  // Prevent tiny fractional results for units like tsp/tbsp
+  // Rounding logic (as before)
   if (["tsp", "tbsp"].includes(finalUnit.toLowerCase())) {
-    if (finalAmount < 0.25) finalAmount = 0.25; // Minimum practical dose?
+    finalAmount = Math.max(0.25, Math.round(finalAmount * 4) / 4);
   }
-  // Add similar logic for lbs/oz if desired
+  if (["lbs", "oz"].includes(finalUnit.toLowerCase())) {
+    finalAmount = Math.round(finalAmount * 10) / 10;
+  }
+  if (finalAmount <= 0) return null;
 
-  return [
-    finalAmount,
-    finalUnit,
-    direction,
-    dosageInfo.productName,
-  ];
+  return [finalAmount, finalUnit, direction, dosageInfo.productName];
 }
 
 // --- Cloud Functions ---
 
+/**
+ * Firebase Cloud Function to get system definitions.
+ * Requires authentication.
+ * @param {functions.https.Request} req - The HTTPS request object.
+ * @param {functions.Response} res - The HTTPS response object.
+ */
 exports.systems = functions.https.onRequest((req, res) => {
   cors(req, res, async () => {
-    // --- LOCKDOWN --- 
-    console.log("Access denied to /systems (locked down).");
-    res.status(503).json({error: "Service temporarily unavailable."});
-    return; // Stop execution
-    // --- END LOCKDOWN ---
-    
     if (req.method !== "POST") {
       return res.status(405).json({error: "Method not allowed. Use POST."});
     }
@@ -298,14 +437,15 @@ exports.systems = functions.https.onRequest((req, res) => {
   });
 });
 
+/**
+ * Firebase Cloud Function to calculate chemical adjustments.
+ * Requires authentication and expects system type and current readings in body.
+ * Stores the reading in Firestore.
+ * @param {functions.https.Request} req - The HTTPS request object.
+ * @param {functions.Response} res - The HTTPS response object.
+ */
 exports.calculate = functions.https.onRequest((req, res) => {
   cors(req, res, async () => {
-    // --- LOCKDOWN --- 
-    console.log("Access denied to /calculate (locked down).");
-    res.status(503).json({error: "Service temporarily unavailable."});
-    return; // Stop execution
-    // --- END LOCKDOWN ---
-
     if (req.method !== "POST") {
       return res.status(405).json({error: "Method not allowed. Use POST."});
     }
@@ -328,6 +468,7 @@ exports.calculate = functions.https.onRequest((req, res) => {
       console.log("Current Readings:", current);
       console.log("Target Readings:", targets);
 
+      // Iterate through TARGETS to calculate adjustments for each
       for (const field in targets) {
         if (Object.prototype.hasOwnProperty.call(targets, field) &&
             Object.prototype.hasOwnProperty.call(current, field)) {
@@ -350,62 +491,82 @@ exports.calculate = functions.https.onRequest((req, res) => {
 
           calculatedAdjustments[field] = adj || [0, null, null, null];
 
-          // Basic Shock Logic (Example - needs refinement)
-          const totalChlorine = parseFloat(current["Total Chlorine"]);
-          if (field === "Free Chlorine" && !isNaN(totalChlorine) &&
-          totalChlorine > 0 && (totalChlorine - currentVal > 0.5)) {
-            needsShock = true;
-          }
-          // Or if Free Chlorine is zero or very low
+          // Check for low FC condition *within* the loop for immediate flag
           if (field === "Free Chlorine" && currentVal < 0.5) {
+            console.log("Low FC detected, potentially needs shock.");
             needsShock = true;
           }
         } else {
-          console.warn("Field ${field} in targets but not in readings.");
+          console.warn(`Field ${field} in targets but not in readings.`);
         }
       }
+
+      // --- Check for High Combined Chlorine AFTER the main loop ---
+      const currentFC = parseFloat(current["Free Chlorine"]);
+      const currentTC = parseFloat(current["Total Chlorine"]);
+
+      if (!isNaN(currentFC) && !isNaN(currentTC) && currentTC > 0) {
+        const combinedChlorine = currentTC - currentFC;
+        console.log(`Calculated Combined Chlorine: 
+        ${combinedChlorine.toFixed(1)} ppm`);
+        if (combinedChlorine > 0.5) {
+          console.log("High Combined Chlorine detected, needs shock.");
+          needsShock = true;
+        }
+      }
+      // Low FC check already happened in the loop
 
       // Calculate shock if needed
       let shockResult = null;
       if (needsShock) {
         console.log("Shock treatment indicated.");
-        const shockKey = "chlorine_up";
+        const shockKey = "shock_treatment"; // Use the new key
+
         if (chemicalDosages[system] && chemicalDosages[system][shockKey]) {
           const shockDosageInfo = chemicalDosages[system][shockKey];
-          const shockTargetPpmBoost = system === "pool" ? 10 : 5;
 
-          // Calculate dosage needed for the boost
-          const dosageMultiplier =
-          shockTargetPpmBoost / shockDosageInfo.ratePpmEffect;
-          const baseDosageNeeded = shockDosageInfo.rate * dosageMultiplier;
-          const volumeRatio = volume / shockDosageInfo.rateVolume;
-          const totalDosageInRateUnit = baseDosageNeeded * volumeRatio;
+          // Check if calculation type is fixed_rate_shock (as expected)
+          if (shockDosageInfo.calculationType === "fixed_rate_shock") {
+            // Calculate dosage based on fixed rate
+            const baseDose = shockDosageInfo.doseAmount; // e.g., 3
+            const doseVolume = shockDosageInfo.doseVolume; // e.g., 500
+            const outputUnit = shockDosageInfo.outputUnit; // e.g., "tbsp"
 
-          // Convert to output unit
-          let shockAmountConverted = totalDosageInRateUnit;
-          let shockUnit = shockDosageInfo.rateUnit;
-          if (shockDosageInfo.outputUnit &&
-            shockDosageInfo.outputUnit.toLowerCase() !==
-          shockDosageInfo.rateUnit.toLowerCase()) {
-            const shockGrams =
-            convertToGrams(totalDosageInRateUnit, shockDosageInfo.rateUnit);
-            shockAmountConverted =
-            convertFromGrams(shockGrams, shockDosageInfo.outputUnit);
-            shockUnit = shockDosageInfo.outputUnit;
+            const volumeRatio = volume / doseVolume; // e.g., 126 / 500
+            const totalDosageNeeded = baseDose * volumeRatio;
+
+            // Convert units if rateUnit differs from outputUnit
+            let finalAmount = totalDosageNeeded;
+            const finalUnit = outputUnit;
+
+            // Rounding for volumetric units (tsp/tbsp)
+            if (["tsp", "tbsp"].includes(finalUnit.toLowerCase())) {
+              finalAmount = Math.max(0.25, Math.round(
+                  finalAmount * 4) / 4); // Round to nearest 0.25
+            }
+
+            // Don't recommend shock if calculated amount is effectively zero
+            if (finalAmount > 0) {
+              shockResult = {
+                amount: finalAmount,
+                unit: finalUnit,
+                product: shockDosageInfo.productName,
+              };
+              console.log("Calculated Shock Dose:", shockResult);
+            } else {
+              console.log("Calculated shock amount is zero, skipping.");
+            }
+          } else {
+            // Handle unexpected calculation type for shock
+            console.warn(`Unexpected calculationType for shock: 
+                 ${shockDosageInfo.calculationType}`);
           }
-
-          const shockProductName = shockDosageInfo.productName +
-          " (Shock Dose)";
-          shockResult = {
-            amount: shockAmountConverted,
-            unit: shockUnit,
-            product: shockProductName,
-          };
         } else {
           console.warn(`Cannot calculate shock: 
-            Missing dosage info for ${shockKey} in system ${system}`);
+             Missing dosage info for ${shockKey} in system ${system}`);
         }
       }
+      // --- End Shock Calculation ---
 
       // --- Store Readings (Consider refining what is stored) ---
       // Maybe store the calculated adjustments too?
@@ -436,14 +597,15 @@ exports.calculate = functions.https.onRequest((req, res) => {
   });
 });
 
+/**
+ * Firebase Cloud Function to get previous readings.
+ * Requires authentication.
+ * Fetches latest 10 readings across all users (for household model).
+ * @param {functions.https.Request} req - The HTTPS request object.
+ * @param {functions.Response} res - The HTTPS response object.
+ */
 exports.getReadings = functions.https.onRequest((req, res) => {
   cors(req, res, async () => {
-    // --- LOCKDOWN --- 
-    console.log("Access denied to /getReadings (locked down).");
-    res.status(503).json({error: "Service temporarily unavailable."});
-    return; // Stop execution
-    // --- END LOCKDOWN ---
-
     if (req.method !== "GET") {
       return res.status(405).json({error: "Method not allowed. Use GET."});
     }

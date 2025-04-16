@@ -25,10 +25,31 @@ export const formatAdjustment = (adjustment) => {
       return "No adjustment needed";
     }
 
-    const action = direction === 'up' ? 'Add' : 'Reduce with'; // Or "Lower using" etc.
-    // Round to 1 decimal unless it's a whole number then show 0
+    const action = direction === 'up' ? 'Add' : 'Reduce with';
     const formattedAmount = amount % 1 === 0 ? amount.toFixed(0) : amount.toFixed(1);
-    return `${action} ${formattedAmount} ${unit} of ${productName}`;
+    
+    let recommendation = `${action} ${formattedAmount} ${unit} of ${productName}`;
+    let instructions = null;
+
+    // Add specific instructions based on product name
+    if (productName === "SpaGuard Chlorinating Concentrate") {
+      instructions = "Repeat dose every 15-20 mins until 3-5 ppm residual is achieved.";
+    } else if (productName === "SpaGuard pH Increaser") {
+      instructions = "Sprinkle into spa water with pump running on high speed. Run pump for 30 mins.";
+    } else if (productName === "SpaGuard pH Decreaser") {
+      instructions = "Ensure TA is >= 125 ppm. Sprinkle into water (aerator off) with pump running. Run pump for 30 mins.";
+    }
+    // Add more specific instructions for other chemicals here
+
+    // For expandable UI later, we might return an object instead:
+    // return { recommendation, instructions }; 
+    
+    // For now, append instructions if they exist
+    if (instructions) {
+        recommendation += `. Instructions: ${instructions}`; 
+    }
+
+    return recommendation;
   }
 
   console.warn('Unexpected adjustment format received in formatAdjustment:', adjustment);
