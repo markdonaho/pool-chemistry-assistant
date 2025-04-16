@@ -263,7 +263,25 @@ const AppContent = () => {
                 {adjustments.shock && Number(adjustments.shock.amount) > 0 && (
                   <div className="shock-treatment">
                     <h3>Shock Treatment Needed</h3>
-                    <p>{formatAdjustment(adjustments.shock)}</p>
+                    {(() => {
+                      // The backend shock result is {amount, unit, product}
+                      // We need to simulate the array structure expected by formatAdjustment
+                      // [amount, unit, direction, productName]
+                      const shockAdjArray = [
+                        adjustments.shock.amount,
+                        adjustments.shock.unit,
+                        'up', // Shock is always 'up'
+                        adjustments.shock.product
+                      ];
+                      // We pass 'Shock' as the field placeholder
+                      const formattedShock = formatAdjustment('Shock', shockAdjArray, system);
+                      return (
+                        <>
+                          <p><strong>Recommendation:</strong> {formattedShock.recommendation}</p>
+                          {formattedShock.instructions && <p><strong>Instructions:</strong> {formattedShock.instructions}</p>}
+                        </>
+                      );
+                    })()}
                   </div>
                 )}
               </>

@@ -40,6 +40,8 @@ export const formatAdjustment = (field, adjustment, system) => {
     instructions = "With pump running at high speed, scatter the required amount of product over the spa water and continue running pump for 30 minutes.";
   } else if (productName === "HTH Super Shock! Treatment") { // Will be used for actual shock calc
     instructions = "With pump running, broadcast the required amount evenly over a wide area in the deepest part of the pool. Brush any undissolved granules. Keep pump running for several hours.";
+  } else if (productName === "HTH Shock Advanced") {
+    instructions = "With pump running during evening hours, broadcast the product evenly over a wide area in the deepest part of the pool. Brush any settled granules to disperse. Keep pump running.";
   }
   // Note: The HTH 3" Tabs instructions are handled in the specific block above
 
@@ -72,7 +74,9 @@ export const formatAdjustment = (field, adjustment, system) => {
       finalInstructions = "With pump running at high speed, scatter the required amount of product over the spa water and continue running pump for 30 minutes.";
     } else if (productName === "HTH Super Shock! Treatment") { // For actual shock calculation later
       finalInstructions = "With pump running, broadcast the required amount evenly over a wide area in the deepest part of the pool. Brush any undissolved granules. Keep pump running for several hours.";
-    } 
+    } else if (productName === "HTH Shock Advanced") {
+      finalInstructions = "With pump running during evening hours, broadcast the product evenly over a wide area in the deepest part of the pool. Brush any settled granules to disperse. Keep pump running.";
+    }
     // Add more else if blocks for other standard chemicals here
   }
 

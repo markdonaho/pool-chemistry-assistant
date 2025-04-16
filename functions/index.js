@@ -87,6 +87,15 @@ const chemicalDosages = {
       rateVolumeUnit: "gal", ratePpmEffect: 10,
       outputUnit: "lbs",
     },
+    // Entry for Pool Shock Treatment
+    shock_treatment: {
+      productName: "HTH Shock Advanced",
+      calculationType: "fixed_rate_shock", // Explicitly define shock calc
+      // Dosage: 1 lb (1 bag) / 13,500 gal
+      rate: 1, rateUnit: "lbs", rateVolume: 13500,
+      rateVolumeUnit: "gal", ratePpmEffect: 0, // Not ppm based
+      outputUnit: "lbs", // Recommend in lbs
+    },
     // Add entries for reducing chemicals if needed
   },
   cold_plunge: {
@@ -543,34 +552,32 @@ exports.calculate = functions.https.onRequest((req, res) => {
           // Check if calculation type is fixed_rate_shock (as expected)
           if (shockDosageInfo.calculationType === "fixed_rate_shock") {
             // Calculate dosage based on fixed rate
-            const baseDose = shockDosageInfo.doseAmount; // e.g., 3
-            const doseVolume = shockDosageInfo.doseVolume; // e.g., 500
-            const outputUnit = shockDosageInfo.outputUnit; // e.g., "tbsp"
+            const baseDose = shockDosageInfo.rate; // e.g., 1
+            const doseVolume = shockDosageInfo.rateVolume; // e.g., 13500
+            const outputUnit = shockDosageInfo.outputUnit; // e.g., "lbs"
 
-            const volumeRatio = volume / doseVolume; // e.g., 126 / 500
+            const volumeRatio = volume / doseVolume; // e.g., 15000 / 13500
             const totalDosageNeeded = baseDose * volumeRatio;
 
             // Convert units if rateUnit differs from outputUnit
             let finalAmount = totalDosageNeeded;
             const finalUnit = outputUnit;
 
-            // Rounding for volumetric units (tsp/tbsp)
+            // Rounding logic
             if (["tsp", "tbsp"].includes(finalUnit.toLowerCase())) {
-              finalAmount = Math.max(0.25, Math.round(
-                  finalAmount * 4) / 4); // Round to nearest 0.25
+              finalAmount = Math.max(0.25, Math.round(finalAmount * 4) / 4);
+            } else if (["lbs", "oz"].includes(finalUnit.toLowerCase())) {
+              // For shock, always round up to nearest 0.5 lbs
+              finalAmount = Math.max(1, Math.ceil(finalAmount * 2) / 2);
             }
 
-            // Don't recommend shock if calculated amount is effectively zero
-            if (finalAmount > 0) {
-              shockResult = {
-                amount: finalAmount,
-                unit: finalUnit,
-                product: shockDosageInfo.productName,
-              };
-              console.log("Calculated Shock Dose:", shockResult);
-            } else {
-              console.log("Calculated shock amount is zero, skipping.");
-            }
+            // Always recommend shock if needed
+            shockResult = {
+              amount: finalAmount,
+              unit: finalUnit,
+              product: shockDosageInfo.productName,
+            };
+            console.log("Calculated Shock Dose:", shockResult);
           } else {
             // Handle unexpected calculation type for shock
             console.warn(`Unexpected calculationType for shock: 
