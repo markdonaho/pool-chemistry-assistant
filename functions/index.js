@@ -102,11 +102,38 @@ const chemicalDosages = {
       outputUnit: "lbs",
     },
     hardness_up: {
-      productName: "Pool Calcium Hardness Increaser (Calcium Chloride)",
-      // Based on ~1.25 lbs per 10ppm per 10k gal (adjust for purity?)
-      rate: 1.25, rateUnit: "lbs", rateVolume: 10000,
-      rateVolumeUnit: "gal", ratePpmEffect: 10,
-      outputUnit: "lbs",
+      productName: "Pool Mate Premium Calcium Hardness Increaser",
+      calculationType: "tiered_hardness_up", // Signal tiered logic
+      // Base rate: 1.6 oz per 1 ppm per 10k gal (matches chart)
+      outputUnit: "lbs", // Dosage chart uses lbs primarily
+      // Tiered dosage rates based on pool volume and desired PPM increase
+      // Format: { volume: gallons, increasePpm: ppm, amountLbs: lbs }
+      tiers: [
+        // 5,000 Gallons
+        {volume: 5000, increasePpm: 10, amountLbs: 0.5}, // 8 oz
+        {volume: 5000, increasePpm: 20, amountLbs: 1},
+        {volume: 5000, increasePpm: 30, amountLbs: 1.5}, // 1 lb 8 oz
+        {volume: 5000, increasePpm: 40, amountLbs: 2},
+        {volume: 5000, increasePpm: 60, amountLbs: 3},
+        {volume: 5000, increasePpm: 80, amountLbs: 4},
+        {volume: 5000, increasePpm: 100, amountLbs: 5},
+        // 10,000 Gallons
+        {volume: 10000, increasePpm: 10, amountLbs: 1},
+        {volume: 10000, increasePpm: 20, amountLbs: 2},
+        {volume: 10000, increasePpm: 30, amountLbs: 3},
+        {volume: 10000, increasePpm: 40, amountLbs: 4},
+        {volume: 10000, increasePpm: 60, amountLbs: 6},
+        {volume: 10000, increasePpm: 80, amountLbs: 8},
+        {volume: 10000, increasePpm: 100, amountLbs: 10},
+        // 20,000 Gallons
+        {volume: 20000, increasePpm: 10, amountLbs: 2},
+        {volume: 20000, increasePpm: 20, amountLbs: 4},
+        {volume: 20000, increasePpm: 30, amountLbs: 7},
+        {volume: 20000, increasePpm: 40, amountLbs: 8},
+        {volume: 20000, increasePpm: 60, amountLbs: 12},
+        {volume: 20000, increasePpm: 80, amountLbs: 16},
+        {volume: 20000, increasePpm: 100, amountLbs: 20},
+      ],
     },
     chlorine_up: {
       productName: "HTH 3\" Chlorine Tabs",
@@ -509,48 +536,253 @@ function calculateChemicalAdjustment(
         return null;
       }
     }
-  } else if (field ===
-    "Cyanuric Acid" && system === "pool" && direction === "up") {
+  } else if (
+    field === "Cyanuric Acid" && system === "pool" && direction === "up") {
     console.log(`Calculating Clorox Stabilizer for current CYA: ${currentVal}`);
     const dosageInfo = chemicalDosages.pool.cya_up;
     if (dosageInfo.calculationType === "tiered_cya_up") {
-      // Find the appropriate tier based on pool volume and target CYA
-      const currentTier = dosageInfo.tiers.find((t) =>
-        volumeGallons <= t.volume && currentVal <= t.targetCya,
-      );
-      const targetTier = dosageInfo.tiers.find((t) =>
-        volumeGallons <= t.volume && targetVal <= t.targetCya,
-      );
+      const getCYADosageLbs = (targetPpm, volume) => {
+        if (targetPpm <= 0) return 0; // Base case
 
-      if (currentTier && targetTier) {
-        console.log(`Found tiers for ${volumeGallons} 
-          gal pool: current ${currentVal} ppm, target ${targetVal} ppm`);
-        const amountDiff = targetTier.amount - currentTier.amount;
-        return [
-          amountDiff, dosageInfo.outputUnit, "up", dosageInfo.productName];
-      } else {
-        // If no exact match, find the closest volume tier and scale
-        const closestVolumeTier = dosageInfo.tiers
-            .filter((t) => t.targetCya === targetVal)
-            .sort((a, b) => Math.abs(a.volume - volumeGallons) -
-            Math.abs(b.volume - volumeGallons))[0];
+        // Find PPM tiers that bracket the targetPpm
+        const allPpmLevels = [
+          ...new Set(dosageInfo.tiers.map(
+              (t) => t.targetCya))].sort((a, b) => a - b);
+        let lowerPpmTierVal = 0;
+        let upperPpmTierVal = allPpmLevels[allPpmLevels.length - 1];
 
-        if (closestVolumeTier) {
-          const volumeRatio = volumeGallons / closestVolumeTier.volume;
-          const scaledAmount = closestVolumeTier.amount * volumeRatio;
-          // Round to nearest 0.1 lbs
-          const finalAmount = Math.round(scaledAmount * 10) / 10;
+        for (const ppm of allPpmLevels) {
+          if (ppm <= targetPpm) {
+            lowerPpmTierVal = ppm;
+          }
+          if (ppm >= targetPpm) {
+            upperPpmTierVal = ppm;
+            break; // Found the upper bound
+          }
+        }
+        // Handle targetPpm lower than the lowest defined tier PPM
+        if (targetPpm < allPpmLevels[0]) {
+          upperPpmTierVal = allPpmLevels[0];
+        }
+
+        console.log(
+            `  [getCYADosageLbs] Target PPM ${targetPpm}
+          : Interpolating between ${lowerPpmTierVal}
+          ppm and ${upperPpmTierVal}ppm tiers.`);
+
+        const getVolumeInterpolatedDose = (ppmLevel) => {
+          if (ppmLevel === 0) return 0; // Dose for 0 ppm is 0
+          const levelTiers =
+          dosageInfo.tiers.filter((t) => t.targetCya ===
+           ppmLevel).sort((a, b)=> a.volume - b.volume);
+          if (levelTiers.length === 0) return null;
+
+          let lowerVolTier = levelTiers[0];
+          let upperVolTier = levelTiers[levelTiers.length - 1];
+          for (const tier of levelTiers) {
+            if (tier.volume <= volume) lowerVolTier = tier;
+            if (tier.volume >= volume) {
+              upperVolTier = tier;
+              break;
+            }
+          }
+
+          if (lowerVolTier.volume ===
+            upperVolTier.volume) return lowerVolTier.amount;
+
+          const volRange = upperVolTier.volume - lowerVolTier.volume;
+          const amountRange = upperVolTier.amount - lowerVolTier.amount;
+          const volPosition =
+          (volRange === 0) ? 0 : (volume - lowerVolTier.volume) / volRange;
+          const interpolatedAmount =
+          lowerVolTier.amount + (amountRange * volPosition);
           console.log(
-              `Scaled dose for ${volumeGallons} gal pool: ${finalAmount} lbs`);
-          return [
-            finalAmount, dosageInfo.outputUnit, "up", dosageInfo.productName];
-        } else {
-          console.log("No suitable tier found for CYA adjustment");
+              `    [getCYADosageLbs] Volume Interp for ${ppmLevel}
+            ppm @ ${volume}gal: ${interpolatedAmount.toFixed(3)} lbs`);
+          return interpolatedAmount;
+        };
+        // --- End Inner Helper ---
+
+        const lowerPpmDose = getVolumeInterpolatedDose(lowerPpmTierVal);
+        const upperPpmDose = getVolumeInterpolatedDose(upperPpmTierVal);
+
+        if (lowerPpmDose === null || upperPpmDose === null) {
+          console.error(
+              `Could not get volume interpolated doses for PPM 
+            levels ${lowerPpmTierVal} or ${upperPpmTierVal}`);
           return null;
         }
+
+        // Interpolate between the PPM level dosages
+        if (lowerPpmTierVal === upperPpmTierVal) {
+          return lowerPpmDose;
+        } // Exact PPM match
+
+        const ppmRange = upperPpmTierVal - lowerPpmTierVal;
+        const ppmPosition =
+        (ppmRange === 0) ? 0 : (targetPpm - lowerPpmTierVal) / ppmRange;
+        const finalInterpolatedDose =
+        lowerPpmDose + ( (upperPpmDose - lowerPpmDose) * ppmPosition );
+        console.log(
+            `  [getCYADosageLbs] Final Dose for ${targetPpm}ppm @ ${volume}
+          gal: ${finalInterpolatedDose.toFixed(3)} lbs`);
+        return finalInterpolatedDose;
+      };
+      // --- End Helper Function ---
+
+      const totalLbsForTarget = getCYADosageLbs(targetVal, volumeGallons);
+      const totalLbsForCurrent = getCYADosageLbs(currentVal, volumeGallons);
+
+      if (totalLbsForTarget === null || totalLbsForCurrent === null) {
+        console.error(
+            "Failed to calculate total CYA dosages for target or current PPM.");
+        return null; // Cannot calculate adjustment
       }
+
+      let adjustmentNeeded = totalLbsForTarget - totalLbsForCurrent;
+
+      adjustmentNeeded = Math.max(0, adjustmentNeeded);
+
+      if (adjustmentNeeded < 0.05) { // Threshold for negligible amount
+        console.log("Calculated CYA adjustment is negligible.");
+        return null;
+      }
+
+      // Round final adjustment to nearest 0.1 lbs
+      const finalAmount = Math.round(adjustmentNeeded * 10) / 10;
+
+      console.log(
+          `Calculated CYA Adjustment: ${finalAmount}
+         lbs (Target: ${totalLbsForTarget.toFixed(2)}
+          lbs - Current: ${totalLbsForCurrent.toFixed(2)} lbs)`);
+      return [finalAmount, dosageInfo.outputUnit, "up", dosageInfo.productName];
+    }
+  } else if (
+    field === "Total Hardness" && system === "pool" && direction === "up") {
+    console.log(
+        `Calculating Pool Mate Hardness Increaser current: ${currentVal} ppm`);
+    const dosageInfo = chemicalDosages.pool.hardness_up;
+    if (dosageInfo.calculationType === "tiered_hardness_up") {
+      const getHardnessDosageLbs = (targetPpm, volume) => {
+        const requiredPpmIncrease = targetPpm;
+        if (requiredPpmIncrease <= 0) return 0;
+
+        // Find PPM Increase tiers that bracket the requiredPpmIncrease
+        const allPpmIncreaseLevels =
+        [...new Set(dosageInfo.tiers.map((t) => t.increasePpm))].sort(
+            (a, b) => a - b);
+        let lowerPpmTierVal = 0;
+        let upperPpmTierVal =
+        allPpmIncreaseLevels[allPpmIncreaseLevels.length - 1]; // Default to max
+
+        for (const ppm of allPpmIncreaseLevels) {
+          if (ppm <= requiredPpmIncrease) {
+            lowerPpmTierVal = ppm;
+          }
+          if (ppm >= requiredPpmIncrease) {
+            upperPpmTierVal = ppm;
+            break;
+          }
+        }
+        if (requiredPpmIncrease < allPpmIncreaseLevels[0]) {
+          upperPpmTierVal = allPpmIncreaseLevels[0];
+        }
+
+        console.log(
+            `  [getHardnessDosageLbs] Required PPM 
+            Increase ${requiredPpmIncrease}
+          : Interpolating between ${lowerPpmTierVal}ppm and ${upperPpmTierVal}
+          ppm increase tiers.`);
+
+
+        const getVolumeInterpolatedDose = (ppmIncreaseLevel) => {
+          if (ppmIncreaseLevel === 0) return 0;
+          const levelTiers =
+          dosageInfo.tiers.filter((t) => t.increasePpm ===
+          ppmIncreaseLevel).sort((a, b)=> a.volume - b.volume);
+          if (levelTiers.length === 0) return null;
+
+          let lowerVolTier = levelTiers[0];
+          let upperVolTier = levelTiers[levelTiers.length - 1];
+          for (const tier of levelTiers) {
+            if (tier.volume <= volume) lowerVolTier = tier;
+            if (tier.volume >= volume) {
+              upperVolTier = tier; break;
+            }
+          }
+
+          if (lowerVolTier.volume ===
+            upperVolTier.volume) return lowerVolTier.amountLbs;
+
+          const volRange = upperVolTier.volume - lowerVolTier.volume;
+          const amountRange = upperVolTier.amountLbs - lowerVolTier.amountLbs;
+          const volPosition =
+          (volRange === 0) ? 0 : (volume - lowerVolTier.volume) / volRange;
+          const interpolatedAmount =
+          lowerVolTier.amountLbs + (amountRange * volPosition);
+          console.log(
+              `    [getHardnessDosageLbs] Volume Interp for ${ppmIncreaseLevel}
+            ppm increase @ ${volume}gal: ${interpolatedAmount.toFixed(3)} lbs`);
+          return interpolatedAmount;
+        };
+          // --- End Inner Helper ---
+
+        const lowerPpmDose = getVolumeInterpolatedDose(lowerPpmTierVal);
+        const upperPpmDose = getVolumeInterpolatedDose(upperPpmTierVal);
+
+        if (lowerPpmDose === null || upperPpmDose === null) {
+          console.error(
+              `Could not get volume interpolated doses for PPM increase
+             levels ${lowerPpmTierVal} or ${upperPpmTierVal}`);
+          return null;
+        }
+
+        // Interpolate between the PPM level dosages
+        if (lowerPpmTierVal === upperPpmTierVal) return lowerPpmDose;
+
+        const ppmRange = upperPpmTierVal - lowerPpmTierVal;
+        const ppmPosition =
+        (ppmRange === 0) ? 0 : (
+          requiredPpmIncrease - lowerPpmTierVal) / ppmRange;
+        const finalInterpolatedDose =
+        lowerPpmDose + ( (upperPpmDose - lowerPpmDose) * ppmPosition );
+        console.log(
+            `  [getHardnessDosageLbs] Final Dose for ${requiredPpmIncrease}ppm
+             increase @ ${volume}gal: ${finalInterpolatedDose.toFixed(3)} lbs`);
+        return finalInterpolatedDose;
+      };
+        // --- End Helper Function ---
+
+      // Calculate the actual PPM increase needed
+      const ppmIncreaseNeeded = targetVal - currentVal;
+      if (ppmIncreaseNeeded <= 0) {
+        console.log("Pool Hardness does not need increase.");
+        return null;
+      }
+
+      const totalLbsNeeded =
+      getHardnessDosageLbs(ppmIncreaseNeeded, volumeGallons);
+
+      if (totalLbsNeeded === null) {
+        console.error("Failed to calculate total Hardness dosage.");
+        return null;
+      }
+
+      if (totalLbsNeeded < 0.05) { // Threshold for negligible amount
+        console.log("Calculated Hardness adjustment is negligible.");
+        return null;
+      }
+
+      // Round final adjustment to nearest 0.1 lbs
+      const finalAmount = Math.round(totalLbsNeeded * 10) / 10;
+
+      console.log(
+          `Calculated Hardness Adjustment: ${finalAmount}
+        lbs for ${ppmIncreaseNeeded.toFixed(0)} ppm increase`);
+      return [finalAmount, dosageInfo.outputUnit, "up", dosageInfo.productName];
     }
   }
+  // --- End New Block ---
 
   // --- Standard PPM Calculation Logic (Fallback) ---
   // Find the chemical key for standard adjustments
@@ -558,7 +790,8 @@ function calculateChemicalAdjustment(
   if (field === "Total Alkalinity" && direction === "up") {
     chemicalKey = "alkalinity_up";
   } else if (field === "Total Hardness" && direction === "up") {
-    chemicalKey = "hardness_up";
+    // ** REMOVE standard hardness calculation if tiered exists **
+    // chemicalKey = "hardness_up";
   } else if (
     field === "Free Chlorine" && direction === "up" && system === "pool") {
     chemicalKey = "chlorine_up";
