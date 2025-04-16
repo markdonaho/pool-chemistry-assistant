@@ -46,11 +46,37 @@ const systems = {
 const chemicalDosages = {
   pool: {
     ph_up: {
-      productName: "Pool pH Increaser (Soda Ash)",
-      // Placeholder - requires specific product data
-      rate: 1.5, rateUnit: "lbs", rateVolume: 10000,
-      rateVolumeUnit: "gal", ratePpmEffect: 0.2, // Highly dependent on TA!
-      outputUnit: "lbs",
+      productName: "Pool Mate pH Up",
+      calculationType: "tiered_ph_up", // Signal specific tiered logic
+      // Base rate info for reference only
+      rate: 1, rateUnit: "oz", rateVolume: 5000,
+      rateVolumeUnit: "gal", ratePpmEffect: 0, // Not applicable
+      outputUnit: "oz", // Will convert to lbs when needed
+      // Tiered dosage rates based on pool volume and pH level
+      // Format: { volume: gallons, phLevel: number, amount: oz }
+      tiers: [
+        {volume: 5000, phLevel: 1, amount: 2.6},
+        {volume: 5000, phLevel: 2, amount: 5.1},
+        {volume: 5000, phLevel: 3, amount: 7.7},
+        {volume: 5000, phLevel: 4, amount: 10.3},
+        {volume: 5000, phLevel: 5, amount: 12.8},
+        {volume: 5000, phLevel: 6, amount: 15.4},
+        {volume: 5000, phLevel: 7, amount: 17.6}, // 1.1 lbs = 17.6 oz
+        {volume: 10000, phLevel: 1, amount: 5.1},
+        {volume: 10000, phLevel: 2, amount: 10.3},
+        {volume: 10000, phLevel: 3, amount: 15.4},
+        {volume: 10000, phLevel: 4, amount: 20.8}, // 1.3 lbs = 20.8 oz
+        {volume: 10000, phLevel: 5, amount: 24}, // 1.5 lbs = 24 oz
+        {volume: 10000, phLevel: 6, amount: 30.4}, // 1.9 lbs = 30.4 oz
+        {volume: 10000, phLevel: 7, amount: 35.2}, // 2.2 lbs = 35.2 oz
+        {volume: 20000, phLevel: 1, amount: 10.3},
+        {volume: 20000, phLevel: 2, amount: 20.8}, // 1.3 lbs = 20.8 oz
+        {volume: 20000, phLevel: 3, amount: 30.4}, // 1.9 lbs = 30.4 oz
+        {volume: 20000, phLevel: 4, amount: 40}, // 2.5 lbs = 40 oz
+        {volume: 20000, phLevel: 5, amount: 51.2}, // 3.2 lbs = 51.2 oz
+        {volume: 20000, phLevel: 6, amount: 62.4}, // 3.9 lbs = 62.4 oz
+        {volume: 20000, phLevel: 7, amount: 72}, // 4.5 lbs = 72 oz
+      ],
     },
     ph_down: {
       productName: "Clorox Pool & Spa pH Down",
@@ -99,16 +125,20 @@ const chemicalDosages = {
       // Tiered dosage rates based on pool volume and target CYA
       // Format: { volume: gallons, targetCya: ppm, amount: lbs }
       tiers: [
-        { volume: 4000, targetCya: 10, amount: 0.33 },  // 5.3 oz
-        { volume: 4000, targetCya: 15, amount: 0.5 },   // 8 oz
-        { volume: 4000, targetCya: 30, amount: 1 },
-        { volume: 12000, targetCya: 10, amount: 1 },
-        { volume: 12000, targetCya: 15, amount: 1.5 },
-        { volume: 12000, targetCya: 30, amount: 3 },
-        { volume: 16000, targetCya: 10, amount: 1.2 },
-        { volume: 16000, targetCya: 15, amount: 2 },
-        { volume: 16000, targetCya: 30, amount: 4 }
-      ]
+        {volume: 4000, targetCya: 10, amount: 0.33}, // 5.3 oz
+        {volume: 4000, targetCya: 15, amount: 0.5}, // 8 oz
+        {volume: 4000, targetCya: 30, amount: 1},
+        {volume: 12000, targetCya: 10, amount: 1},
+        {volume: 12000, targetCya: 15, amount: 1.5},
+        {volume: 12000, targetCya: 30, amount: 3},
+        {volume: 15000, targetCya: 10, amount: 1.25},
+        {volume: 15000, targetCya: 15, amount: 1.875},
+        {volume: 15000, targetCya: 30, amount: 3.75},
+        {volume: 15000, targetCya: 40, amount: 5},
+        {volume: 16000, targetCya: 10, amount: 1.2},
+        {volume: 16000, targetCya: 15, amount: 2},
+        {volume: 16000, targetCya: 30, amount: 4},
+      ],
     },
     // Entry for Pool Shock Treatment
     shock_treatment: {
@@ -288,6 +318,143 @@ function calculateChemicalAdjustment(
       console.log("Cold plunge pH doesn't require increase.");
       return null;
     }
+  } else if (field === "pH" && system === "pool" && direction === "up") {
+    console.log(`Calculating Pool Mate pH Up for current pH: ${currentVal}`);
+    const dosageInfo = chemicalDosages.pool.ph_up;
+    if (dosageInfo.calculationType === "tiered_ph_up") {
+      // Determine ACTUAL pH difference needed
+      const phDiff = targetVal - currentVal;
+      console.log(
+          `Target pH: ${targetVal}, Current pH: ${currentVal}, 
+        Actual pH Difference (phDiff): ${phDiff.toFixed(1)}`);
+
+      if (phDiff <= 0) return null; // No increase needed
+
+      // Determine levels to interpolate between based on phDiff
+      // User interpretation: Level X increases pH by X.0 points
+      const lowerLevel = Math.floor(phDiff); // e.g., 2 for phDiff 2.4
+      const upperLevel = Math.ceil(phDiff); // e.g., 3 for phDiff 2.4
+
+      // Cap levels at chart bounds (0 to 7)
+      const boundedLowerLevel = Math.max(0, Math.min(7, lowerLevel));
+      const boundedUpperLevel = Math.max(1, Math.min(7, upperLevel));
+
+      console.log(
+          `Interpolating dosage between chart Level ${boundedLowerLevel}
+         and Level ${boundedUpperLevel} based on phDiff ${phDiff.toFixed(1)}`);
+
+      // --- Helper Function to Get Dose for Specific Level & Volume ---
+      const getDosageOz = (level, volume) => {
+        if (level === 0) return 0; // Base case: Level 0 = 0 dose
+
+        const levelTiers = dosageInfo.tiers.filter((t) => t.phLevel === level);
+        if (levelTiers.length === 0) {
+          console.warn(
+              `No dosage tiers found for level ${level}. Cannot calculate.`);
+          return null; // Indicate failure
+        }
+
+        // Sort tiers by volume to allow interpolation
+        levelTiers.sort((a, b) => a.volume - b.volume);
+
+        // Find tiers that bracket the target volume
+        let lowerVolTier = null;
+        let upperVolTier = null;
+        for (const tier of levelTiers) {
+          if (tier.volume <= volume) {
+            lowerVolTier = tier;
+          }
+          if (tier.volume >= volume && !upperVolTier) {
+            upperVolTier = tier;
+          }
+        }
+        // Handle edge cases where volume is outside tier range
+        if (!lowerVolTier) lowerVolTier = levelTiers[0];
+        if (!upperVolTier) upperVolTier = levelTiers[levelTiers.length - 1];
+
+        if (lowerVolTier.volume === upperVolTier.volume) {
+          console.log(
+              `  Level ${level}: Exact match or single tier found:
+           ${lowerVolTier.amount} oz for ${volume} gal`);
+          return lowerVolTier.amount; // Amount is in oz
+        }
+
+        // Interpolate amount based on volume
+        const volRange = upperVolTier.volume - lowerVolTier.volume;
+        const amountRange = upperVolTier.amount - lowerVolTier.amount;
+        const volPosition = (
+        volRange === 0) ? 0 : (volume - lowerVolTier.volume) / volRange;
+        const interpolatedAmountOz =
+        lowerVolTier.amount + (amountRange * volPosition);
+
+        console.log(
+            `  Level ${level}: Interpolated ${interpolatedAmountOz.toFixed(2)}
+         oz for ${volume} gal 
+         (based on ${lowerVolTier.volume}gal/${lowerVolTier.amount}oz
+          and ${upperVolTier.volume}gal/${upperVolTier.amount}oz)`);
+        return interpolatedAmountOz;
+      };
+      // --- End Helper Function ---
+
+      // Get the volume-interpolated dosages for the lower and upper pH levels
+      const lowerLevelDosageOz = getDosageOz(boundedLowerLevel, volumeGallons);
+      const upperLevelDosageOz = getDosageOz(boundedUpperLevel, volumeGallons);
+
+      if (lowerLevelDosageOz === null || upperLevelDosageOz === null) {
+        console.error("Failed to get dosages for interpolation levels.");
+        return null; // Cannot proceed if helper failed
+      }
+
+      // Interpolate between the two level dosages based on phDiff decimal part
+      let finalAmountOz;
+      if (boundedLowerLevel === boundedUpperLevel) {
+        finalAmountOz = lowerLevelDosageOz;
+      } else {
+        const levelRange = boundedUpperLevel - boundedLowerLevel;
+        const levelPosition = (levelRange === 0) ? 0 :
+        (phDiff - boundedLowerLevel) / levelRange;
+        finalAmountOz = lowerLevelDosageOz +
+        ( (upperLevelDosageOz - lowerLevelDosageOz) * levelPosition );
+        console.log(
+            `Final pH Level Interpolation: ${lowerLevelDosageOz.toFixed(2)}oz
+         (L${boundedLowerLevel}) + [(${upperLevelDosageOz.toFixed(2)}oz
+          (L${boundedUpperLevel}) - ${lowerLevelDosageOz.toFixed(2)}oz)
+           * ${levelPosition.toFixed(2)}] = ${finalAmountOz.toFixed(2)} oz`);
+      }
+
+      let finalAmount;
+      let finalUnit;
+
+      // Convert to lbs if amount is 16 oz or more, round appropriately
+      if (finalAmountOz >= 16) {
+        finalAmount = Math.round((finalAmountOz / 16) * 10) / 10;
+        finalUnit = "lbs";
+      } else {
+        finalAmount = Math.round(finalAmountOz * 10) / 10;
+        finalUnit = "oz";
+      }
+      console.log(
+          `Calculated Pool Mate pH Up Dose: ${finalAmount} ${finalUnit}`);
+
+      // Check if the actual pH difference is very large (exceeds chart max)
+      const needsRetest = phDiff > 7.0;
+      if (needsRetest) {
+        console.log(`Large pH difference (${phDiff.toFixed(1)} > 7.0), 
+        recommending re-test after applying max chart dose (Level 7).`);
+        const maxDoseOz = getDosageOz(7, volumeGallons);
+        if (maxDoseOz === null) return null;
+        if (maxDoseOz >= 16) {
+          finalAmount = Math.round((maxDoseOz / 16) * 10) / 10;
+          finalUnit = "lbs";
+        } else {
+          finalAmount = Math.round(maxDoseOz * 10) / 10;
+          finalUnit = "oz";
+        }
+        return [finalAmount, finalUnit, "up", dosageInfo.productName, true];
+      } else {
+        return [finalAmount, finalUnit, "up", dosageInfo.productName];
+      }
+    }
   } else if (field === "pH" && system === "pool" && direction === "down") {
     console.log(`Calculating Clorox pH Down for current pH: ${currentVal}`);
     const dosageInfo = chemicalDosages.pool.ph_down;
@@ -358,31 +525,41 @@ function calculateChemicalAdjustment(
         return null;
       }
     }
-  } else if (field === "Cyanuric Acid" && system === "pool" && direction === "up") {
+  } else if (field ===
+    "Cyanuric Acid" && system === "pool" && direction === "up") {
     console.log(`Calculating Clorox Stabilizer for current CYA: ${currentVal}`);
     const dosageInfo = chemicalDosages.pool.cya_up;
     if (dosageInfo.calculationType === "tiered_cya_up") {
       // Find the appropriate tier based on pool volume and target CYA
-      const tier = dosageInfo.tiers.find(t => 
-        volumeGallons <= t.volume && targetVal <= t.targetCya
+      const currentTier = dosageInfo.tiers.find((t) =>
+        volumeGallons <= t.volume && currentVal <= t.targetCya,
       );
-      
-      if (tier) {
-        console.log(`Found tier for ${tier.volume} gal pool targeting ${tier.targetCya} ppm CYA`);
-        return [tier.amount, dosageInfo.outputUnit, "up", dosageInfo.productName];
+      const targetTier = dosageInfo.tiers.find((t) =>
+        volumeGallons <= t.volume && targetVal <= t.targetCya,
+      );
+
+      if (currentTier && targetTier) {
+        console.log(`Found tiers for ${volumeGallons} 
+          gal pool: current ${currentVal} ppm, target ${targetVal} ppm`);
+        const amountDiff = targetTier.amount - currentTier.amount;
+        return [
+          amountDiff, dosageInfo.outputUnit, "up", dosageInfo.productName];
       } else {
         // If no exact match, find the closest volume tier and scale
         const closestVolumeTier = dosageInfo.tiers
-          .filter(t => t.targetCya === targetVal)
-          .sort((a, b) => Math.abs(a.volume - volumeGallons) - Math.abs(b.volume - volumeGallons))[0];
-        
+            .filter((t) => t.targetCya === targetVal)
+            .sort((a, b) => Math.abs(a.volume - volumeGallons) -
+            Math.abs(b.volume - volumeGallons))[0];
+
         if (closestVolumeTier) {
           const volumeRatio = volumeGallons / closestVolumeTier.volume;
           const scaledAmount = closestVolumeTier.amount * volumeRatio;
           // Round to nearest 0.1 lbs
           const finalAmount = Math.round(scaledAmount * 10) / 10;
-          console.log(`Scaled dose for ${volumeGallons} gal pool: ${finalAmount} lbs`);
-          return [finalAmount, dosageInfo.outputUnit, "up", dosageInfo.productName];
+          console.log(
+              `Scaled dose for ${volumeGallons} gal pool: ${finalAmount} lbs`);
+          return [
+            finalAmount, dosageInfo.outputUnit, "up", dosageInfo.productName];
         } else {
           console.log("No suitable tier found for CYA adjustment");
           return null;
