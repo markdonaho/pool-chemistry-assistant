@@ -277,6 +277,12 @@ function calculateChemicalAdjustment(
 
 exports.systems = functions.https.onRequest((req, res) => {
   cors(req, res, async () => {
+    // --- LOCKDOWN --- 
+    console.log("Access denied to /systems (locked down).");
+    res.status(503).json({error: "Service temporarily unavailable."});
+    return; // Stop execution
+    // --- END LOCKDOWN ---
+    
     if (req.method !== "POST") {
       return res.status(405).json({error: "Method not allowed. Use POST."});
     }
@@ -294,6 +300,12 @@ exports.systems = functions.https.onRequest((req, res) => {
 
 exports.calculate = functions.https.onRequest((req, res) => {
   cors(req, res, async () => {
+    // --- LOCKDOWN --- 
+    console.log("Access denied to /calculate (locked down).");
+    res.status(503).json({error: "Service temporarily unavailable."});
+    return; // Stop execution
+    // --- END LOCKDOWN ---
+
     if (req.method !== "POST") {
       return res.status(405).json({error: "Method not allowed. Use POST."});
     }
@@ -426,6 +438,12 @@ exports.calculate = functions.https.onRequest((req, res) => {
 
 exports.getReadings = functions.https.onRequest((req, res) => {
   cors(req, res, async () => {
+    // --- LOCKDOWN --- 
+    console.log("Access denied to /getReadings (locked down).");
+    res.status(503).json({error: "Service temporarily unavailable."});
+    return; // Stop execution
+    // --- END LOCKDOWN ---
+
     if (req.method !== "GET") {
       return res.status(405).json({error: "Method not allowed. Use GET."});
     }
