@@ -53,11 +53,20 @@ const chemicalDosages = {
       outputUnit: "lbs",
     },
     ph_down: {
-      productName: "Pool pH Decreaser (Dry Acid)",
-      // Placeholder
-      rate: 2, rateUnit: "lbs", rateVolume: 10000,
-      rateVolumeUnit: "gal", ratePpmEffect: 0.2, // Highly dependent on TA!
-      outputUnit: "lbs",
+      productName: "Clorox Pool & Spa pH Down",
+      calculationType: "tiered_ph_down", // Signal specific tiered logic
+      // Base rate info for reference only
+      rate: 6, rateUnit: "oz", rateVolume: 10000,
+      rateVolumeUnit: "gal", ratePpmEffect: 0, // Not applicable
+      outputUnit: "oz",
+      // Tiered dosage rates (pH ranges are upper bounds)
+      tiers: [
+        {maxPh: 7.6, amount: 0}, // Ideal range, no adjustment
+        {maxPh: 7.8, amount: 6}, // pH 7.7-7.8
+        {maxPh: 8.0, amount: 12}, // pH 7.9-8.0
+        {maxPh: 8.4, amount: 20}, // pH 8.1-8.4
+        {maxPh: 99.9, amount: 24}, // pH Above 8.4
+      ],
     },
     alkalinity_up: {
       productName: "Pool Alkalinity Increaser (Sodium Bicarbonate)",
@@ -81,11 +90,25 @@ const chemicalDosages = {
       outputUnit: "tab(s)",
     },
     cya_up: {
-      productName: "Pool Cyanuric Acid Stabilizer",
-      // Based on ~1 lb per 10ppm per 10k gal
-      rate: 1, rateUnit: "lbs", rateVolume: 10000,
-      rateVolumeUnit: "gal", ratePpmEffect: 10,
+      productName: "Clorox Pool & Spa Chlorine Stabilizer",
+      calculationType: "tiered_cya_up", // Signal specific tiered logic
+      // Base rate info for reference only
+      rate: 1, rateUnit: "lbs", rateVolume: 4000,
+      rateVolumeUnit: "gal", ratePpmEffect: 0, // Not applicable
       outputUnit: "lbs",
+      // Tiered dosage rates based on pool volume and target CYA
+      // Format: { volume: gallons, targetCya: ppm, amount: lbs }
+      tiers: [
+        { volume: 4000, targetCya: 10, amount: 0.33 },  // 5.3 oz
+        { volume: 4000, targetCya: 15, amount: 0.5 },   // 8 oz
+        { volume: 4000, targetCya: 30, amount: 1 },
+        { volume: 12000, targetCya: 10, amount: 1 },
+        { volume: 12000, targetCya: 15, amount: 1.5 },
+        { volume: 12000, targetCya: 30, amount: 3 },
+        { volume: 16000, targetCya: 10, amount: 1.2 },
+        { volume: 16000, targetCya: 15, amount: 2 },
+        { volume: 16000, targetCya: 30, amount: 4 }
+      ]
     },
     // Entry for Pool Shock Treatment
     shock_treatment: {
@@ -265,6 +288,25 @@ function calculateChemicalAdjustment(
       console.log("Cold plunge pH doesn't require increase.");
       return null;
     }
+  } else if (field === "pH" && system === "pool" && direction === "down") {
+    console.log(`Calculating Clorox pH Down for current pH: ${currentVal}`);
+    const dosageInfo = chemicalDosages.pool.ph_down;
+    if (dosageInfo.calculationType === "tiered_ph_down") {
+      // Find the appropriate tier based on current pH
+      const tier = dosageInfo.tiers.find((t) => currentVal <= t.maxPh);
+      if (tier && tier.amount > 0) {
+        const volumeRatio = volumeGallons / dosageInfo.rateVolume;
+        const totalDosageNeeded = tier.amount * volumeRatio;
+        // Round to nearest 0.5 oz
+        const finalAmount = Math.round(totalDosageNeeded * 2) / 2;
+        console.log(`Calculated Clorox pH Down Dose: ${finalAmount} oz`);
+        return [finalAmount, dosageInfo.outputUnit,
+          "down", dosageInfo.productName];
+      } else {
+        console.log("Pool pH is in ideal range, no adjustment needed.");
+        return null;
+      }
+    }
   } else if (
     field === "pH" && system === "cold_plunge" && direction === "down") {
     console.log(
@@ -314,6 +356,37 @@ function calculateChemicalAdjustment(
       } else {
         console.log("Cold plunge FC at or above minimum residual.");
         return null;
+      }
+    }
+  } else if (field === "Cyanuric Acid" && system === "pool" && direction === "up") {
+    console.log(`Calculating Clorox Stabilizer for current CYA: ${currentVal}`);
+    const dosageInfo = chemicalDosages.pool.cya_up;
+    if (dosageInfo.calculationType === "tiered_cya_up") {
+      // Find the appropriate tier based on pool volume and target CYA
+      const tier = dosageInfo.tiers.find(t => 
+        volumeGallons <= t.volume && targetVal <= t.targetCya
+      );
+      
+      if (tier) {
+        console.log(`Found tier for ${tier.volume} gal pool targeting ${tier.targetCya} ppm CYA`);
+        return [tier.amount, dosageInfo.outputUnit, "up", dosageInfo.productName];
+      } else {
+        // If no exact match, find the closest volume tier and scale
+        const closestVolumeTier = dosageInfo.tiers
+          .filter(t => t.targetCya === targetVal)
+          .sort((a, b) => Math.abs(a.volume - volumeGallons) - Math.abs(b.volume - volumeGallons))[0];
+        
+        if (closestVolumeTier) {
+          const volumeRatio = volumeGallons / closestVolumeTier.volume;
+          const scaledAmount = closestVolumeTier.amount * volumeRatio;
+          // Round to nearest 0.1 lbs
+          const finalAmount = Math.round(scaledAmount * 10) / 10;
+          console.log(`Scaled dose for ${volumeGallons} gal pool: ${finalAmount} lbs`);
+          return [finalAmount, dosageInfo.outputUnit, "up", dosageInfo.productName];
+        } else {
+          console.log("No suitable tier found for CYA adjustment");
+          return null;
+        }
       }
     }
   }

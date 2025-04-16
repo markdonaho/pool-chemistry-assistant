@@ -12,7 +12,9 @@ export const formatAdjustment = (field, adjustment, system) => {
   }
 
   const [amount, unit, direction, productName] = adjustment;
-  const action = direction === "up" ? "Add" : "Remove/Lower"; // Simple direction
+  // Special case for pH down - we want to say "Add" even though direction is "down"
+  const action = (field === "pH" && direction === "down") ? "Add" : 
+                (direction === "up" ? "Add" : "Remove/Lower");
   let recommendation = "";
   let instructions = null;
 
@@ -42,6 +44,10 @@ export const formatAdjustment = (field, adjustment, system) => {
     instructions = "With pump running, broadcast the required amount evenly over a wide area in the deepest part of the pool. Brush any undissolved granules. Keep pump running for several hours.";
   } else if (productName === "HTH Shock Advanced") {
     instructions = "With pump running during evening hours, broadcast the product evenly over a wide area in the deepest part of the pool. Brush any settled granules to disperse. Keep pump running.";
+  } else if (productName === "Clorox Pool & Spa pH Down") {
+    instructions = "While walking around edge of pool, broadcast product evenly across the deepest area while pool is not in use and pump is running. Allow to circulate for 2 hours then retest pH. Brush any undissolved clumps off surface.";
+  } else if (productName === "Clorox Pool & Spa Chlorine Stabilizer") {
+    instructions = "Before adding, backwash or clean filter. Remove items from skimmer. Add product VERY SLOWLY into skimmer with filter and pump operating. Do not backwash filter for at least 48 hours. If using deep-end application, broadcast evenly and brush undissolved product. Do not allow product to sit on bottom.";
   }
   // Note: The HTH 3" Tabs instructions are handled in the specific block above
 
@@ -76,6 +82,10 @@ export const formatAdjustment = (field, adjustment, system) => {
       finalInstructions = "With pump running, broadcast the required amount evenly over a wide area in the deepest part of the pool. Brush any undissolved granules. Keep pump running for several hours.";
     } else if (productName === "HTH Shock Advanced") {
       finalInstructions = "With pump running during evening hours, broadcast the product evenly over a wide area in the deepest part of the pool. Brush any settled granules to disperse. Keep pump running.";
+    } else if (productName === "Clorox Pool & Spa pH Down") {
+      finalInstructions = "While walking around edge of pool, broadcast product evenly across the deepest area while pool is not in use and pump is running. Allow to circulate for 2 hours then retest pH. Brush any undissolved clumps off surface.";
+    } else if (productName === "Clorox Pool & Spa Chlorine Stabilizer") {
+      finalInstructions = "Before adding, backwash or clean filter. Remove items from skimmer. Add product VERY SLOWLY into skimmer with filter and pump operating. Do not backwash filter for at least 48 hours. If using deep-end application, broadcast evenly and brush undissolved product. Do not allow product to sit on bottom.";
     }
     // Add more else if blocks for other standard chemicals here
   }
