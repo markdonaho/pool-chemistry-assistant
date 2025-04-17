@@ -1,0 +1,17 @@
+# Firebase Admin SDK - needed for interacting with Firebase services (if any)
+firebase-admin>=6.0.0
+
+# Firebase Functions Framework for Python
+functions-framework>=3.0.0
+
+# OpenCV for image processing
+opencv-python-headless>=4.5.0 # Use headless if no GUI needed
+
+# NumPy for numerical operations (OpenCV dependency)
+numpy>=1.19.0
+
+# Optional: scikit-image for additional image utilities (like LAB conversion if needed)
+# scikit-image>=0.18.0
+
+# Optional: Pillow for image handling flexibility
+# Pillow>=9.0.0 
