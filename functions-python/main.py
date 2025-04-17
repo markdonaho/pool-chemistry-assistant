@@ -25,6 +25,29 @@ def rgb_to_lab(rgb):
     lab_pixel = cv2.cvtColor(bgr_pixel, cv2.COLOR_BGR2LAB)
     return lab_pixel[0][0].tolist() # Return as a list [L, A, B]
 
+def order_points(pts):
+    # Initialzie a list of coordinates that will be ordered
+    # such that the first entry in the list is the top-left,
+    # the second entry is the top-right, the third is the
+    # bottom-right, and the fourth is the bottom-left
+    rect = np.zeros((4, 2), dtype="float32")
+
+    # The top-left point will have the smallest sum, whereas
+    # the bottom-right point will have the largest sum
+    s = pts.sum(axis=1)
+    rect[0] = pts[np.argmin(s)]
+    rect[2] = pts[np.argmax(s)]
+
+    # Now, compute the difference between the points, the
+    # top-right point will have the smallest difference,
+    # whereas the bottom-left will have the largest difference
+    diff = np.diff(pts, axis=1)
+    rect[1] = pts[np.argmin(diff)]
+    rect[3] = pts[np.argmax(diff)]
+
+    # return the ordered coordinates
+    return rect
+
 # --- Define Color Key (Using estimated RGB converted to LAB) ---
 # Values sampled visually from the provided image, accuracy may vary.
 # Structure: { parameter: [ { lab: [L, a, b], value: ppm/pH }, ... ] }
@@ -110,21 +133,119 @@ NORMAL_RANGES = {
 # --- Placeholder Functions for CV Steps (To be implemented) ---
 
 def detect_strip(img):
-    # TODO: Implement logic to find the main bounding box of the test strip
-    print("TODO: Detect Strip")
-    # Return dummy coordinates covering most of a typical strip for now
-    # Format: (x, y, width, height) or None if not found
-    h, w = img.shape[:2]
-    return (int(w*0.1), int(h*0.05), int(w*0.8), int(h*0.9)) 
+    print("Detecting strip...")
+    img_height, img_width = img.shape[:2]
+    min_strip_area = img_height * img_width * 0.01 # Strip should be at least 1% of image area
+    max_strip_area = img_height * img_width * 0.80 # Strip shouldn't be the whole image
 
-def align_strip(img, strip_bbox):
-    # TODO: Implement perspective correction if needed, based on detected corners
-    print("TODO: Align Strip (Perspective Correction)")
-    # For now, just crop to the bounding box
-    x, y, w, h = strip_bbox
-    aligned_img = img[y:y+h, x:x+w]
-    # Return the aligned/cropped image and any transformation matrix if calculated
-    return aligned_img, None 
+    # 1. Grayscale
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    # 2. Blur
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+
+    # 3. Edge Detection (adjust thresholds as needed)
+    # Lower thresholds detect weaker edges, higher thresholds detect stronger edges.
+    # Experimentation might be needed based on test images.
+    edged = cv2.Canny(blurred, 50, 150) 
+
+    # 4. Find Contours
+    # Use RETR_LIST and CHAIN_APPROX_SIMPLE for efficiency
+    contours, _ = cv2.findContours(edged.copy(), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+
+    if not contours:
+        print("No contours found.")
+        return None
+
+    # 5. Filter & Select Contours
+    # Sort contours by area (largest first)
+    contours = sorted(contours, key=cv2.contourArea, reverse=True)[:10] # Check top 10 largest
+
+    found_strip_contour_points = None # Store the 4 points
+    for c in contours:
+        area = cv2.contourArea(c)
+        if area < min_strip_area or area > max_strip_area:
+            # print(f"Contour area {area:.0f} outside range ({min_strip_area:.0f}-{max_strip_area:.0f}). Skipping.")
+            continue
+            
+        # Approximate the contour shape
+        peri = cv2.arcLength(c, True)
+        # Epsilon: Parameter specifying the approximation accuracy. 
+        # Smaller value -> more points, closer to original shape.
+        # Larger value -> fewer points, more approximated shape.
+        # 0.02 * peri is a common starting point.
+        approx = cv2.approxPolyDP(c, 0.03 * peri, True) 
+
+        # Check if the approximation has 4 vertices (is a quadrilateral)
+        if len(approx) == 4:
+            # Calculate bounding box and aspect ratio
+            (x, y, w, h) = cv2.boundingRect(approx)
+            aspect_ratio = float(w) / h
+            
+            # Define expected aspect ratio range (strip is tall and narrow)
+            # Or wide and short depending on orientation, allow both
+            min_aspect_ratio = 0.1 # e.g., width is 10% of height
+            max_aspect_ratio = 10.0 # e.g., width is 10x height (allows horizontal)
+            
+            is_valid_aspect_ratio = (aspect_ratio >= min_aspect_ratio and aspect_ratio <= 1.0 / min_aspect_ratio)
+            
+            print(f"Contour 4 vertices. Area: {area:.0f}, Aspect Ratio: {aspect_ratio:.2f}")
+            if is_valid_aspect_ratio:
+                 found_strip_contour_points = approx # Store the points
+                 print("Found potential strip contour meeting aspect ratio criteria.")
+                 break # Found a likely candidate
+            # else:
+                # print(f"Contour has {len(approx)} vertices. Skipping.")
+
+    if found_strip_contour_points is None:
+        print("Could not find a suitable 4-vertex contour with valid aspect ratio.")
+        return None
+
+    # Return the 4 corner points of the contour
+    # Reshape points to be a simple list of (x, y) tuples/lists
+    points = found_strip_contour_points.reshape(4, 2)
+    print(f"Detected strip contour points: {points.tolist()}")
+    return points.astype(np.float32) # Ensure float32 for perspective transform
+
+def align_strip(img, strip_points):
+    print("Aligning strip...")
+    # strip_points should be the 4x2 numpy array from detect_strip
+
+    # Order the points: tl, tr, br, bl
+    rect = order_points(strip_points)
+    (tl, tr, br, bl) = rect
+
+    # Compute the width of the new image, which will be the
+    # maximum distance between bottom-right and bottom-left
+    # x-coordiates or the top-right and top-left x-coordinates
+    widthA = np.sqrt(((br[0] - bl[0]) ** 2) + ((br[1] - bl[1]) ** 2))
+    widthB = np.sqrt(((tr[0] - tl[0]) ** 2) + ((tr[1] - tl[1]) ** 2))
+    maxWidth = max(int(widthA), int(widthB))
+
+    # Compute the height of the new image, which will be the
+    # maximum distance between the top-right and bottom-right
+    # y-coordinates or the top-left and bottom-left y-coordinates
+    heightA = np.sqrt(((tr[0] - br[0]) ** 2) + ((tr[1] - br[1]) ** 2))
+    heightB = np.sqrt(((tl[0] - bl[0]) ** 2) + ((tl[1] - bl[1]) ** 2))
+    maxHeight = max(int(heightA), int(heightB))
+
+    # Now that we have the dimensions of the new image, construct
+    # the set of destination points to obtain a "birds eye view",
+    # (i.e. top-down view) of the image, again specifying points
+    # in the top-left, top-right, bottom-right, and bottom-left order
+    dst = np.array([
+        [0, 0],
+        [maxWidth - 1, 0],
+        [maxWidth - 1, maxHeight - 1],
+        [0, maxHeight - 1]], dtype="float32")
+
+    # Compute the perspective transform matrix and then apply it
+    M = cv2.getPerspectiveTransform(rect, dst)
+    warped = cv2.warpPerspective(img, M, (maxWidth, maxHeight))
+
+    print(f"Perspective warp complete. Output shape: {warped.shape}")
+    # Return the warped image and the transformation matrix
+    return warped, M
 
 def locate_pads(aligned_img, num_pads=7):
     # TODO: Implement logic to find the centers/bboxes of the 7 pads
@@ -251,74 +372,78 @@ def process_test_strip(request):
 
         # --- CV Processing Steps ---
         
-        # 1. Detect Strip (using placeholder)
-        strip_bbox = detect_strip(img_original)
-        if not strip_bbox:
+        # 1. Detect Strip
+        strip_points = detect_strip(img_original)
+        if strip_points is None: # Check if None
             return "Could not detect test strip in image.", 400
             
-        # 2. Align/Correct Perspective (using placeholder)
-        # Pass the original image here
-        aligned_strip_img, M = align_strip(img_original, strip_bbox) 
+        # 2. Align/Correct Perspective
+        aligned_strip_img, M = align_strip(img_original, strip_points) 
         if aligned_strip_img is None or aligned_strip_img.size == 0:
              return "Failed to align/crop strip.", 500
         print(f"Aligned strip shape: {aligned_strip_img.shape}")
 
-        # 3. Locate Pads (using placeholder)
-        # Use the aligned/cropped image
-        pad_centers_relative = locate_pads(aligned_strip_img) 
+        # 3. Locate Pads
+        pad_centers_relative = locate_pads(aligned_strip_img)
         if not pad_centers_relative or len(pad_centers_relative) != 7:
-            return f"Could not locate all 7 pads (found {len(pad_centers_relative)}).", 400
+             return f"Could not locate all 7 pads (found {len(pad_centers_relative)}).", 400
 
-        # Define order of pads matching the COLOR_KEY/NORMAL_RANGES structure
-        # IMPORTANT: This order MUST match the physical order on the strip top-to-bottom
         parameter_order = [
             "Total Hardness", "Total Chlorine", "Free Chlorine", 
             "Bromine", "Total Alkalinity", "Cyanuric Acid", "pH"
         ]
-
         calculated_readings = {}
-        pad_coordinates_feedback = [] # For frontend overlay
+        pad_coordinates_feedback = []
 
         # 4. Sample Pad Colors & 5. Match Colors
         for i, parameter in enumerate(parameter_order):
             center_relative = pad_centers_relative[i]
-            
-            # Sample color from the aligned image
             sampled_lab = sample_pad_color(aligned_strip_img, center_relative) 
-            
-            # Match color using the defined key
-            matched_value, _ = match_color(sampled_lab, parameter) # Ignore distances for now
-            
+            matched_value, _ = match_color(sampled_lab, parameter)
             calculated_readings[parameter] = matched_value if matched_value is not None else "N/A"
 
             # 6. Get Coordinates for Feedback (map back to original image)
-            # Placeholder: Use relative centers for now, needs proper inverse transform if alignment changes coords
-            # We need the *original* image coordinates of the center of the pad
-            strip_x, strip_y, _, _ = strip_bbox
-            original_x = strip_x + center_relative[0]
-            original_y = strip_y + center_relative[1]
-            
-            # TODO: If perspective transform 'M' was calculated, apply inverse transform here
-            # Example: original_coords = cv2.perspectiveTransform(np.array([[center_relative]], dtype=np.float32), np.linalg.inv(M))
-            # original_x = int(original_coords[0][0][0])
-            # original_y = int(original_coords[0][0][1])
+            # Use inverse transform M^-1 if perspective correction was applied
+            if M is not None:
+                # Need to reshape center_relative for perspectiveTransform
+                center_relative_arr = np.array([[center_relative]], dtype=np.float32)
+                # Calculate inverse matrix
+                try:
+                    M_inv = np.linalg.inv(M)
+                    original_coords = cv2.perspectiveTransform(center_relative_arr, M_inv)
+                    original_x = int(original_coords[0][0][0])
+                    original_y = int(original_coords[0][0][1])
+                except np.linalg.LinAlgError:
+                    print("Warning: Could not invert perspective matrix M. Falling back to bbox offset.")
+                    # Fallback: Approximate based on bounding box (less accurate if warped)
+                    # Need the original bounding box or points here for better fallback
+                    # For now, just use relative coords (which is wrong)
+                    original_x = center_relative[0] 
+                    original_y = center_relative[1]
+            else:
+                 # Fallback if M is None (e.g., align_strip just cropped)
+                 # Get original bounding box from points
+                 x_coords = strip_points[:, 0]
+                 y_coords = strip_points[:, 1]
+                 strip_x = int(np.min(x_coords))
+                 strip_y = int(np.min(y_coords))
+                 original_x = strip_x + center_relative[0]
+                 original_y = strip_y + center_relative[1]
             
             pad_coordinates_feedback.append({
                 'parameter': parameter,
                 'x': original_x,
                 'y': original_y,
-                'radius': 5 # Placeholder radius
+                'radius': 5 
             })
 
         # --- Prepare Response ---
         response_data = {
             'readings': calculated_readings,
-            'padCoordinates': pad_coordinates_feedback, # Coordinates for frontend overlay
-            'normalRanges': NORMAL_RANGES # Use the actual ranges
+            'padCoordinates': pad_coordinates_feedback, 
+            'normalRanges': NORMAL_RANGES 
         }
-        
         print("Processing Complete. Response:", response_data)
-
         return response_data, 200
 
     except Exception as e:
