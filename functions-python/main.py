@@ -1,7 +1,7 @@
 # Python Cloud Functions
 import functions_framework
 import firebase_admin
-from firebase_admin import initialize_app, credentials
+from firebase_admin import initialize_app, credentials, auth # Import auth
 import numpy as np
 import cv2
 import os
@@ -98,9 +98,8 @@ COLOR_KEY = {
     ],
     "Cyanuric Acid": [
         {"lab": rgb_to_lab([255, 205, 183]), "value": 0},    # Light peach
-        # Represents the 30-50 block. We'll use interpolation logic later.
-        {"lab": rgb_to_lab([255, 195, 177]), "value": 30},   # Peach
-        {"lab": rgb_to_lab([255, 195, 177]), "value": 50},   # Using same color for 50
+        # Simplified 30-50 range to a single 40 point
+        {"lab": rgb_to_lab([255, 195, 177]), "value": 40},   # Peach (representing old 30-50 block)
         {"lab": rgb_to_lab([255, 184, 172]), "value": 100},  # Darker peach/pink
         {"lab": rgb_to_lab([255, 174, 167]), "value": 150},  # Pink peach
         {"lab": rgb_to_lab([255, 164, 162]), "value": 240}   # Pink
@@ -248,51 +247,156 @@ def align_strip(img, strip_points):
     return warped, M
 
 def locate_pads(aligned_img, num_pads=7):
-    # TODO: Implement logic to find the centers/bboxes of the 7 pads
-    # within the aligned_img, likely based on expected vertical spacing.
-    print("TODO: Locate Pads")
-    pad_height_approx = aligned_img.shape[0] / num_pads
-    pad_centers = []
-    for i in range(num_pads):
-        center_y = int(pad_height_approx * (i + 0.5))
-        center_x = int(aligned_img.shape[1] * 0.5) # Assume centered horizontally
-        pad_centers.append((center_x, center_y))
+    print("Locating pads using Hough Line Transform...")
+    height, width = aligned_img.shape[:2]
     
-    # Return list of (x, y) coordinates relative to aligned_img
-    # These need to be mapped back to original image coords later for feedback
-    return pad_centers 
+    # 1. Preprocessing
+    gray = cv2.cvtColor(aligned_img, cv2.COLOR_BGR2GRAY)
+    # blurred = cv2.GaussianBlur(gray, (3, 3), 0) # Optional blur
 
-def sample_pad_color(img, center, sample_size=10):
-    # TODO: Improve sampling (e.g., median of a square area)
-    print(f"TODO: Sample Pad Color at {center}")
+    # 2. Edge Detection
+    # Might need different thresholds than strip detection, focus on pad edges
+    edged = cv2.Canny(gray, 50, 150) 
+
+    # 3. Hough Line Transform to find line segments
+    # Parameters: (image, rho_accuracy, theta_accuracy, threshold, min_line_length, max_line_gap)
+    # Adjust threshold, minLineLength, maxLineGap based on testing
+    min_line_length = width * 0.3 # Line should be at least 30% of strip width
+    max_line_gap = width * 0.1   # Max gap between segments of the same line
+    lines = cv2.HoughLinesP(edged, 1, np.pi / 180, threshold=20, 
+                          minLineLength=min_line_length, maxLineGap=max_line_gap)
+
+    if lines is None:
+        print("Warning: No lines found by Hough Transform. Falling back to simple division.")
+        # Fallback logic (same as previous placeholder)
+        pad_height_approx = height / num_pads
+        pad_centers = []
+        for i in range(num_pads):
+            center_y = int(pad_height_approx * (i + 0.5))
+            center_x = int(width * 0.5)
+            pad_centers.append((center_x, center_y))
+        return pad_centers
+
+    # 4. Filter Lines
+    horizontal_lines = []
+    for line in lines:
+        x1, y1, x2, y2 = line[0]
+        # Calculate angle
+        angle = np.arctan2(y2 - y1, x2 - x1) * 180. / np.pi
+        # Check if line is close to horizontal (e.g., within +/- 10 degrees)
+        if abs(angle) < 10 or abs(angle - 180) < 10:
+            # Check if line is roughly centered horizontally
+            center_x = (x1 + x2) / 2
+            if center_x > width * 0.2 and center_x < width * 0.8:
+                 # Store the average Y coordinate and the line itself for potential clustering
+                avg_y = (y1 + y2) / 2
+                horizontal_lines.append({'y': avg_y, 'line': line[0]})
+    
+    if not horizontal_lines:
+        print("Warning: No suitable horizontal lines found. Falling back to simple division.")
+        # Fallback logic (same as previous placeholder)
+        pad_height_approx = height / num_pads
+        pad_centers = []
+        for i in range(num_pads):
+            center_y = int(pad_height_approx * (i + 0.5))
+            center_x = int(width * 0.5)
+            pad_centers.append((center_x, center_y))
+        return pad_centers
+
+    # 5. Group and Select Lines
+    # Sort lines by Y coordinate
+    horizontal_lines.sort(key=lambda item: item['y'])
+
+    # Cluster nearby lines (simple clustering based on distance)
+    clustered_lines_y = []
+    if horizontal_lines:
+        current_cluster_y = [horizontal_lines[0]['y']]
+        last_y = horizontal_lines[0]['y']
+        # Heuristic: Cluster lines closer than ~1/10th pad height? 
+        # Pad height approx height / (num_pads * ~1.5) to account for gaps? Very rough.
+        cluster_threshold = (height / (num_pads + 2)) * 0.1 # Small threshold
+
+        for i in range(1, len(horizontal_lines)):
+            y = horizontal_lines[i]['y']
+            if abs(y - last_y) < cluster_threshold:
+                current_cluster_y.append(y)
+            else:
+                # Finalize previous cluster
+                clustered_lines_y.append(np.mean(current_cluster_y))
+                # Start new cluster
+                current_cluster_y = [y]
+            last_y = y
+        # Add the last cluster
+        clustered_lines_y.append(np.mean(current_cluster_y))
+
+    print(f"Found {len(clustered_lines_y)} distinct horizontal line clusters.")
+
+    # Select the 8 most likely boundary lines
+    # This part is tricky and might need more sophisticated logic or assumptions.
+    # Simplistic approach: If we have >= 8 lines, assume they are the boundaries.
+    # A better way might involve looking at the spacing between lines.
+    
+    boundary_lines_y = []
+    if len(clustered_lines_y) >= num_pads + 1: # Expect 8 lines for 7 pads
+        # Simplistic: Take the first 8 distinct lines found
+        # This assumes the top lines are detected correctly and there aren't too many spurious lines
+        # Could also try selecting lines with the most consistent spacing in the middle?        
+        boundary_lines_y = sorted(clustered_lines_y)[:num_pads + 1]
+        print(f"Selected {len(boundary_lines_y)} boundary lines (Y-coords): {[int(y) for y in boundary_lines_y]}")
+    else:
+        print(f"Warning: Did not find enough distinct horizontal lines ({len(clustered_lines_y)} found, expected {num_pads + 1}). Falling back to simple division.")
+        # Fallback logic
+        pad_height_approx = height / num_pads
+        pad_centers = []
+        for i in range(num_pads):
+            center_y = int(pad_height_approx * (i + 0.5))
+            center_x = int(width * 0.5)
+            pad_centers.append((center_x, center_y))
+        return pad_centers
+
+    # 6. Calculate Centers
+    pad_centers = []
+    center_x = int(width * 0.5) # Assume horizontal center
+    for i in range(num_pads):
+        # Pad center Y is the midpoint between boundary line i and i+1
+        center_y = int((boundary_lines_y[i] + boundary_lines_y[i+1]) / 2)
+        pad_centers.append((center_x, center_y))
+
+    print(f"Located pad centers: {pad_centers}")
+    return pad_centers
+
+def sample_pad_color(img, center, pad_height, default_sample_fraction=0.5, min_sample_size=5, max_sample_size=20):
+    print(f"Sampling Pad Color at {center} with est. height {pad_height:.0f}")
     x, y = center
-    # Ensure sample area is within bounds
     h, w = img.shape[:2]
+
+    # Determine sample size based on pad height (assume roughly square pads)
+    if pad_height > 0:
+        sample_size = int(pad_height * default_sample_fraction)
+        sample_size = max(min_sample_size, min(sample_size, max_sample_size)) # Clamp size
+    else:
+        sample_size = min_sample_size # Fallback if height is invalid
+    print(f"Using sample size: {sample_size}")
+
     half_size = sample_size // 2
     x1 = max(0, x - half_size)
     y1 = max(0, y - half_size)
     x2 = min(w, x + half_size)
     y2 = min(h, y + half_size)
     
-    if y2 <= y1 or x2 <= x1:
-         print(f"Warning: Sample area for {center} is invalid or zero size.")
-         return None # Cannot sample
-
-    sample_area = img[y1:y2, x1:x2]
+    if y2 <= y1 or x2 <= x1: # Check bounds *after* calculating coords
+         print(f"Warning: Sample area for {center} is invalid or zero size ({x1},{y1} -> {x2},{y2}).")
+         return None
     
-    # Calculate median color in LAB space
+    sample_area = img[y1:y2, x1:x2]
     if sample_area.size == 0:
         print(f"Warning: Sample area empty for {center}.")
         return None
-
-    # Convert sample area BGR to LAB
+        
     lab_sample_area = cv2.cvtColor(sample_area, cv2.COLOR_BGR2LAB)
-    
-    # Reshape to list of pixels and find median
     pixels = lab_sample_area.reshape(-1, 3)
     median_lab = np.median(pixels, axis=0)
-    
-    return median_lab.tolist() # Return [L, a, b]
+    return median_lab.tolist()
 
 def match_color(sampled_lab, parameter_key):
     # TODO: Implement LAB distance + interpolation
@@ -353,7 +457,20 @@ def process_test_strip(request):
     if request.method != 'POST':
         return 'Method Not Allowed', 405
 
-    # TODO: Add Authentication check (e.g., using request.headers.get('Authorization'))
+    # --- Authentication Check --- 
+    auth_header = request.headers.get('Authorization')
+    if not auth_header or not auth_header.startswith('Bearer '):
+        return 'Unauthorized: Missing or invalid Authorization header', 401
+    
+    id_token = auth_header.split('Bearer ')[1]
+    try:
+        decoded_token = auth.verify_id_token(id_token)
+        uid = decoded_token['uid']
+        print(f"Authenticated user: {uid}")
+    except Exception as e:
+        print(f"Token verification failed: {e}")
+        return f"Unauthorized: Token verification failed: {e}", 401
+    # --- End Authentication Check --- 
 
     image_file = request.files.get('image')
     if not image_file:
@@ -384,9 +501,10 @@ def process_test_strip(request):
         print(f"Aligned strip shape: {aligned_strip_img.shape}")
 
         # 3. Locate Pads
-        pad_centers_relative = locate_pads(aligned_strip_img)
-        if not pad_centers_relative or len(pad_centers_relative) != 7:
-             return f"Could not locate all 7 pads (found {len(pad_centers_relative)}).", 400
+        pad_centers_relative, boundary_lines_y = locate_pads(aligned_strip_img)
+        if not pad_centers_relative or len(pad_centers_relative) != 7 or not boundary_lines_y or len(boundary_lines_y) != 8:
+             # Added check for boundary lines length
+             return f"Could not locate all 7 pads or 8 boundaries reliably.", 400
 
         parameter_order = [
             "Total Hardness", "Total Chlorine", "Free Chlorine", 
@@ -398,7 +516,13 @@ def process_test_strip(request):
         # 4. Sample Pad Colors & 5. Match Colors
         for i, parameter in enumerate(parameter_order):
             center_relative = pad_centers_relative[i]
-            sampled_lab = sample_pad_color(aligned_strip_img, center_relative) 
+            
+            # --- Calculate pad height for dynamic sampling --- 
+            pad_height_estimate = boundary_lines_y[i+1] - boundary_lines_y[i]
+            
+            # Sample color using dynamic size
+            sampled_lab = sample_pad_color(aligned_strip_img, center_relative, pad_height_estimate) 
+            
             matched_value, _ = match_color(sampled_lab, parameter)
             calculated_readings[parameter] = matched_value if matched_value is not None else "N/A"
 
