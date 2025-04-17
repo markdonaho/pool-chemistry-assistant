@@ -16,15 +16,6 @@ except ValueError as e:
     print(f"Firebase Admin SDK already initialized? {e}")
 
 
-# --- Helper Function to Convert RGB to LAB ---
-# Note: OpenCV expects BGR format for its built-in conversion.
-# If providing RGB values directly, we'll convert BGR -> LAB.
-def rgb_to_lab(rgb):
-    # Convert single RGB pixel to a 1x1 BGR image
-    bgr_pixel = np.uint8([[rgb[::-1]]]) # Reverse RGB to BGR
-    lab_pixel = cv2.cvtColor(bgr_pixel, cv2.COLOR_BGR2LAB)
-    return lab_pixel[0][0].tolist() # Return as a list [L, A, B]
-
 def order_points(pts):
     # Initialzie a list of coordinates that will be ordered
     # such that the first entry in the list is the top-left,
@@ -48,69 +39,67 @@ def order_points(pts):
     # return the ordered coordinates
     return rect
 
-# --- Define Color Key (Using estimated RGB converted to LAB) ---
-# Values sampled visually from the provided image, accuracy may vary.
+# --- Define Color Key (Using pre-calculated LAB values) ---
 # Structure: { parameter: [ { lab: [L, a, b], value: ppm/pH }, ... ] }
 COLOR_KEY = {
     "Total Hardness": [
-        {"lab": rgb_to_lab([94, 114, 97]), "value": 0},    # Olive green
-        {"lab": rgb_to_lab([133, 103, 105]), "value": 25},   # Mauve brown
-        {"lab": rgb_to_lab([148, 101, 100]), "value": 50},   # Brown
-        {"lab": rgb_to_lab([156, 107, 107]), "value": 120},  # Reddish brown
-        {"lab": rgb_to_lab([173, 111, 111]), "value": 250},  # Lighter red-brown
-        {"lab": rgb_to_lab([188, 111, 111]), "value": 425}   # Pinkish brown (est)
+        {"lab": [47, -11, 5], "value": 0},
+        {"lab": [46, 12, -1], "value": 25},
+        {"lab": [46, 19, 0], "value": 50},
+        {"lab": [49, 19, -1], "value": 120},
+        {"lab": [51, 24, 0], "value": 250},
+        {"lab": [52, 29, 1], "value": 425}
     ],
     "Total Chlorine": [
-        {"lab": rgb_to_lab([253, 252, 217]), "value": 0},    # Pale yellow
-        {"lab": rgb_to_lab([245, 246, 195]), "value": 0.5},  # Light yellow-green
-        {"lab": rgb_to_lab([228, 235, 182]), "value": 1},    # Yellow-green
-        {"lab": rgb_to_lab([206, 224, 159]), "value": 3},    # Light green
-        {"lab": rgb_to_lab([183, 211, 158]), "value": 5},    # Mint green
-        {"lab": rgb_to_lab([106, 195, 166]), "value": 10},   # Turquoise
-        {"lab": rgb_to_lab([78, 185, 168]), "value": 20}    # Dark turquoise
+        {"lab": [99, -6, 26], "value": 0},
+        {"lab": [98, -11, 23], "value": 0.5},
+        {"lab": [93, -14, 23], "value": 1},
+        {"lab": [89, -19, 27], "value": 3},
+        {"lab": [84, -21, 25], "value": 5},
+        {"lab": [76, -29, 10], "value": 10},
+        {"lab": [72, -32, 6], "value": 20}
     ],
     "Free Chlorine": [
-        {"lab": rgb_to_lab([255, 255, 255]), "value": 0},    # White
-        {"lab": rgb_to_lab([255, 238, 240]), "value": 0.5},  # Very light pink
-        {"lab": rgb_to_lab([255, 218, 223]), "value": 1},    # Light pink
-        {"lab": rgb_to_lab([235, 155, 195]), "value": 3},    # Medium pink/magenta
-        {"lab": rgb_to_lab([208, 117, 167]), "value": 5},    # Dark pink/magenta
-        {"lab": rgb_to_lab([178, 100, 140]), "value": 10},   # Purple pink
-        {"lab": rgb_to_lab([150, 85, 119]), "value": 20}    # Dark purple pink
+        {"lab": [100, 0, 0], "value": 0},
+        {"lab": [96, 7, -1], "value": 0.5},
+        {"lab": [91, 14, -1], "value": 1},
+        {"lab": [73, 35, -10], "value": 3},
+        {"lab": [59, 41, -10], "value": 5},
+        {"lab": [52, 34, -4], "value": 10},
+        {"lab": [46, 29, -3], "value": 20}
     ],
     "Bromine": [
-        {"lab": rgb_to_lab([255, 255, 255]), "value": 0},    # White
-        {"lab": rgb_to_lab([255, 238, 240]), "value": 1},    # Very light pink (Same as FC 0.5)
-        {"lab": rgb_to_lab([255, 218, 223]), "value": 2},    # Light pink (Same as FC 1)
-        {"lab": rgb_to_lab([235, 155, 195]), "value": 6},    # Medium pink/magenta (Same as FC 3)
-        {"lab": rgb_to_lab([208, 117, 167]), "value": 10},   # Dark pink/magenta (Same as FC 5)
-        {"lab": rgb_to_lab([178, 100, 140]), "value": 20},   # Purple pink (Same as FC 10)
-        {"lab": rgb_to_lab([150, 85, 119]), "value": 40}    # Dark purple pink (Same as FC 20)
+        {"lab": [100, 0, 0], "value": 0},
+        {"lab": [96, 7, -1], "value": 1},
+        {"lab": [91, 14, -1], "value": 2},
+        {"lab": [73, 35, -10], "value": 6},
+        {"lab": [59, 41, -10], "value": 10},
+        {"lab": [52, 34, -4], "value": 20},
+        {"lab": [46, 29, -3], "value": 40}
     ],
     "Total Alkalinity": [
-        {"lab": rgb_to_lab([255, 242, 180]), "value": 0},    # Light yellow
-        {"lab": rgb_to_lab([205, 238, 183]), "value": 40},   # Yellow-green
-        {"lab": rgb_to_lab([149, 203, 158]), "value": 80},   # Medium green
-        {"lab": rgb_to_lab([99, 167, 127]), "value": 120},  # Forest green
-        {"lab": rgb_to_lab([67, 137, 117]), "value": 180},  # Dark green/teal
-        {"lab": rgb_to_lab([50, 109, 103]), "value": 240},  # Dark teal
-        {"lab": rgb_to_lab([43, 92, 90]), "value": 360}     # Darkest teal/green
+        {"lab": [96, -5, 32], "value": 0},
+        {"lab": [93, -24, 25], "value": 40},
+        {"lab": [80, -29, 24], "value": 80},
+        {"lab": [67, -32, 18], "value": 120},
+        {"lab": [57, -30, 8], "value": 180},
+        {"lab": [47, -26, 2], "value": 240},
+        {"lab": [40, -21, 0], "value": 360}
     ],
     "Cyanuric Acid": [
-        {"lab": rgb_to_lab([255, 205, 183]), "value": 0},    # Light peach
-        # Simplified 30-50 range to a single 40 point
-        {"lab": rgb_to_lab([255, 195, 177]), "value": 40},   # Peach (representing old 30-50 block)
-        {"lab": rgb_to_lab([255, 184, 172]), "value": 100},  # Darker peach/pink
-        {"lab": rgb_to_lab([255, 174, 167]), "value": 150},  # Pink peach
-        {"lab": rgb_to_lab([255, 164, 162]), "value": 240}   # Pink
+        {"lab": [86, 10, 26], "value": 0},
+        {"lab": [83, 11, 25], "value": 40},
+        {"lab": [79, 14, 26], "value": 100},
+        {"lab": [76, 16, 25], "value": 150},
+        {"lab": [72, 19, 23], "value": 240}
     ],
-    "pH": [
-        {"lab": rgb_to_lab([255, 188, 162]), "value": 6.2},  # Light orange
-        {"lab": rgb_to_lab([255, 174, 150]), "value": 6.8},  # Orange
-        {"lab": rgb_to_lab([255, 159, 138]), "value": 7.2},  # Darker orange
-        {"lab": rgb_to_lab([255, 143, 126]), "value": 7.8},  # Red orange
-        {"lab": rgb_to_lab([255, 128, 116]), "value": 8.4},  # Red
-        {"lab": rgb_to_lab([255, 113, 108]), "value": 9.0}   # Dark red
+     "pH": [
+        {"lab": [79, 25, 29], "value": 6.2},
+        {"lab": [75, 30, 32], "value": 6.8},
+        {"lab": [71, 36, 34], "value": 7.2},
+        {"lab": [66, 42, 36], "value": 7.8},
+        {"lab": [61, 48, 37], "value": 8.4},
+        {"lab": [57, 52, 37], "value": 9.0}
     ]
 }
 
@@ -129,7 +118,6 @@ NORMAL_RANGES = {
 }
 
 
-# --- Placeholder Functions for CV Steps (To be implemented) ---
 
 def detect_strip(img):
     print("Detecting strip...")
@@ -146,7 +134,7 @@ def detect_strip(img):
     # 3. Edge Detection (adjust thresholds as needed)
     # Lower thresholds detect weaker edges, higher thresholds detect stronger edges.
     # Experimentation might be needed based on test images.
-    edged = cv2.Canny(blurred, 50, 150) 
+    edged = cv2.Canny(blurred, 50, 150)
 
     # 4. Find Contours
     # Use RETR_LIST and CHAIN_APPROX_SIMPLE for efficiency
@@ -166,28 +154,28 @@ def detect_strip(img):
         if area < min_strip_area or area > max_strip_area:
             # print(f"Contour area {area:.0f} outside range ({min_strip_area:.0f}-{max_strip_area:.0f}). Skipping.")
             continue
-            
+
         # Approximate the contour shape
         peri = cv2.arcLength(c, True)
-        # Epsilon: Parameter specifying the approximation accuracy. 
+        # Epsilon: Parameter specifying the approximation accuracy.
         # Smaller value -> more points, closer to original shape.
         # Larger value -> fewer points, more approximated shape.
         # 0.02 * peri is a common starting point.
-        approx = cv2.approxPolyDP(c, 0.03 * peri, True) 
+        approx = cv2.approxPolyDP(c, 0.03 * peri, True)
 
         # Check if the approximation has 4 vertices (is a quadrilateral)
         if len(approx) == 4:
             # Calculate bounding box and aspect ratio
             (x, y, w, h) = cv2.boundingRect(approx)
             aspect_ratio = float(w) / h
-            
+
             # Define expected aspect ratio range (strip is tall and narrow)
             # Or wide and short depending on orientation, allow both
             min_aspect_ratio = 0.1 # e.g., width is 10% of height
             max_aspect_ratio = 10.0 # e.g., width is 10x height (allows horizontal)
-            
+
             is_valid_aspect_ratio = (aspect_ratio >= min_aspect_ratio and aspect_ratio <= 1.0 / min_aspect_ratio)
-            
+
             print(f"Contour 4 vertices. Area: {area:.0f}, Aspect Ratio: {aspect_ratio:.2f}")
             if is_valid_aspect_ratio:
                  found_strip_contour_points = approx # Store the points
@@ -248,330 +236,317 @@ def align_strip(img, strip_points):
 
 def locate_pads(aligned_img, num_pads=7):
     print("Locating pads using Hough Line Transform...")
-    height, width = aligned_img.shape[:2]
+    # Ensure input is grayscale
+    if len(aligned_img.shape) == 3:
+        gray = cv2.cvtColor(aligned_img, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = aligned_img
+
+    # --- Parameters for Hough Line Transform ---
+    rho = 1             # Distance resolution of the accumulator in pixels
+    theta = np.pi / 180 # Angle resolution of the accumulator in radians
+    threshold = 50     # Accumulator threshold parameter. Only lines > threshold are returned.
+    min_line_length = 50 # Minimum line length. Line segments shorter than this are rejected.
+    max_line_gap = 10    # Maximum allowed gap between points on the same line to link them.
+    # --- End Parameters ---
+
+    # Enhance edges specifically for horizontal/vertical lines if needed
+    # Using a Sobel filter might help emphasize the pad edges
+    # grad_x = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
+    # grad_y = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
+    # abs_grad_x = cv2.convertScaleAbs(grad_x)
+    # abs_grad_y = cv2.convertScaleAbs(grad_y)
+    # edges = cv2.addWeighted(abs_grad_x, 0.5, abs_grad_y, 0.5, 0) # Combine gradients
     
-    # 1. Preprocessing
-    gray = cv2.cvtColor(aligned_img, cv2.COLOR_BGR2GRAY)
-    # blurred = cv2.GaussianBlur(gray, (3, 3), 0) # Optional blur
+    # Or stick with Canny if it works well
+    edges = cv2.Canny(gray, 50, 150, apertureSize=3)
 
-    # 2. Edge Detection
-    # Might need different thresholds than strip detection, focus on pad edges
-    edged = cv2.Canny(gray, 50, 150) 
-
-    # 3. Hough Line Transform to find line segments
-    # Parameters: (image, rho_accuracy, theta_accuracy, threshold, min_line_length, max_line_gap)
-    # Adjust threshold, minLineLength, maxLineGap based on testing
-    min_line_length = width * 0.3 # Line should be at least 30% of strip width
-    max_line_gap = width * 0.1   # Max gap between segments of the same line
-    lines = cv2.HoughLinesP(edged, 1, np.pi / 180, threshold=20, 
-                          minLineLength=min_line_length, maxLineGap=max_line_gap)
+    # Detect lines using Hough Line Transform
+    lines = cv2.HoughLinesP(edges, rho, theta, threshold, np.array([]),
+                            min_line_length, max_line_gap)
 
     if lines is None:
-        print("Warning: No lines found by Hough Transform. Falling back to simple division.")
-        # Fallback logic (same as previous placeholder)
-        pad_height_approx = height / num_pads
-        pad_centers = []
-        for i in range(num_pads):
-            center_y = int(pad_height_approx * (i + 0.5))
-            center_x = int(width * 0.5)
-            pad_centers.append((center_x, center_y))
-        return pad_centers
+        print("Hough Line Transform did not detect any lines.")
+        return None
 
-    # 4. Filter Lines
+    print(f"Hough Transform detected {len(lines)} line segments initially.")
+
+    # --- Filter and Cluster Lines ---
     horizontal_lines = []
+    vertical_lines = []
+    img_height, img_width = gray.shape
+    angle_tolerance_degrees = 5 # Allow lines within 5 degrees of horizontal/vertical
+    angle_tolerance_rad = np.deg2rad(angle_tolerance_degrees)
+
     for line in lines:
         x1, y1, x2, y2 = line[0]
-        # Calculate angle
-        angle = np.arctan2(y2 - y1, x2 - x1) * 180. / np.pi
-        # Check if line is close to horizontal (e.g., within +/- 10 degrees)
-        if abs(angle) < 10 or abs(angle - 180) < 10:
-            # Check if line is roughly centered horizontally
-            center_x = (x1 + x2) / 2
-            if center_x > width * 0.2 and center_x < width * 0.8:
-                 # Store the average Y coordinate and the line itself for potential clustering
-                avg_y = (y1 + y2) / 2
-                horizontal_lines.append({'y': avg_y, 'line': line[0]})
-    
+        angle = math.atan2(y2 - y1, x2 - x1)
+
+        # Check if line is approximately horizontal
+        if abs(angle) < angle_tolerance_rad or abs(abs(angle) - np.pi) < angle_tolerance_rad:
+            # Add the average y-coordinate for clustering horizontal lines
+            horizontal_lines.append(((y1 + y2) / 2, line[0]))
+        # Check if line is approximately vertical
+        elif abs(abs(angle) - np.pi / 2) < angle_tolerance_rad:
+            # Add the average x-coordinate for clustering vertical lines
+            vertical_lines.append(((x1 + x2) / 2, line[0]))
+
+    print(f"Filtered lines: {len(horizontal_lines)} horizontal, {len(vertical_lines)} vertical candidates.")
+
+    # --- Clustering (Simple approach: average position) ---
+    # This is a very basic clustering. More robust methods (DBSCAN, KMeans) might be needed.
+    # For now, let's assume the major horizontal lines define pad boundaries.
+
     if not horizontal_lines:
-        print("Warning: No suitable horizontal lines found. Falling back to simple division.")
-        # Fallback logic (same as previous placeholder)
-        pad_height_approx = height / num_pads
-        pad_centers = []
-        for i in range(num_pads):
-            center_y = int(pad_height_approx * (i + 0.5))
-            center_x = int(width * 0.5)
-            pad_centers.append((center_x, center_y))
-        return pad_centers
+        print("No horizontal lines found after filtering.")
+        return None
 
-    # 5. Group and Select Lines
-    # Sort lines by Y coordinate
-    horizontal_lines.sort(key=lambda item: item['y'])
+    # Sort horizontal lines by their y-coordinate
+    horizontal_lines.sort(key=lambda item: item[0])
 
-    # Cluster nearby lines (simple clustering based on distance)
-    clustered_lines_y = []
-    if horizontal_lines:
-        current_cluster_y = [horizontal_lines[0]['y']]
-        last_y = horizontal_lines[0]['y']
-        # Heuristic: Cluster lines closer than ~1/10th pad height? 
-        # Pad height approx height / (num_pads * ~1.5) to account for gaps? Very rough.
-        cluster_threshold = (height / (num_pads + 2)) * 0.1 # Small threshold
+    # --- Find Average Pad Boundaries from Horizontal Lines ---
+    # We expect num_pads + 1 horizontal boundary lines (top of first pad to bottom of last pad)
+    # We need to cluster the y-coordinates to find the dominant horizontal lines.
 
-        for i in range(1, len(horizontal_lines)):
-            y = horizontal_lines[i]['y']
-            if abs(y - last_y) < cluster_threshold:
-                current_cluster_y.append(y)
+    # Simple clustering: Group lines that are close together
+    y_coords = [y for y, _ in horizontal_lines]
+    clusters = []
+    if y_coords:
+        current_cluster = [y_coords[0]]
+        for i in range(1, len(y_coords)):
+            # If the next y is close to the last one in the current cluster
+            if y_coords[i] - current_cluster[-1] < max_line_gap * 2: # Heuristic gap threshold
+                current_cluster.append(y_coords[i])
             else:
-                # Finalize previous cluster
-                clustered_lines_y.append(np.mean(current_cluster_y))
-                # Start new cluster
-                current_cluster_y = [y]
-            last_y = y
-        # Add the last cluster
-        clustered_lines_y.append(np.mean(current_cluster_y))
+                # Average the cluster and start a new one
+                clusters.append(np.mean(current_cluster))
+                current_cluster = [y_coords[i]]
+        clusters.append(np.mean(current_cluster)) # Add the last cluster
 
-    print(f"Found {len(clustered_lines_y)} distinct horizontal line clusters.")
+    print(f"Found {len(clusters)} distinct horizontal line clusters (potential pad boundaries) at y-coords: {[f'{c:.1f}' for c in clusters]}")
 
-    # Select the 8 most likely boundary lines
-    # This part is tricky and might need more sophisticated logic or assumptions.
-    # Simplistic approach: If we have >= 8 lines, assume they are the boundaries.
-    # A better way might involve looking at the spacing between lines.
-    
-    boundary_lines_y = []
-    if len(clustered_lines_y) >= num_pads + 1: # Expect 8 lines for 7 pads
-        # Simplistic: Take the first 8 distinct lines found
-        # This assumes the top lines are detected correctly and there aren't too many spurious lines
-        # Could also try selecting lines with the most consistent spacing in the middle?        
-        boundary_lines_y = sorted(clustered_lines_y)[:num_pads + 1]
-        print(f"Selected {len(boundary_lines_y)} boundary lines (Y-coords): {[int(y) for y in boundary_lines_y]}")
-    else:
-        print(f"Warning: Did not find enough distinct horizontal lines ({len(clustered_lines_y)} found, expected {num_pads + 1}). Falling back to simple division.")
-        # Fallback logic
-        pad_height_approx = height / num_pads
-        pad_centers = []
-        for i in range(num_pads):
-            center_y = int(pad_height_approx * (i + 0.5))
-            center_x = int(width * 0.5)
-            pad_centers.append((center_x, center_y))
-        return pad_centers
+    # We need exactly num_pads + 1 boundaries
+    if len(clusters) != num_pads + 1:
+        print(f"Warning: Expected {num_pads + 1} horizontal boundaries, but found {len(clusters)}. Adjust Hough parameters or clustering.")
+        # Attempt to select the most plausible boundaries if too many/few found?
+        # For now, return None if the count is wrong.
+        return None
 
-    # 6. Calculate Centers
+    pad_boundaries_y = sorted(clusters)
+
+    # --- Determine Pad Center X (Assume centered in the image) ---
+    # A more robust method would use vertical lines or other features.
+    center_x = img_width / 2
+
+    # --- Calculate Pad Centers and Heights ---
     pad_centers = []
-    center_x = int(width * 0.5) # Assume horizontal center
+    pad_heights = []
     for i in range(num_pads):
-        # Pad center Y is the midpoint between boundary line i and i+1
-        center_y = int((boundary_lines_y[i] + boundary_lines_y[i+1]) / 2)
-        pad_centers.append((center_x, center_y))
+        y_top = pad_boundaries_y[i]
+        y_bottom = pad_boundaries_y[i+1]
+        center_y = (y_top + y_bottom) / 2
+        height = y_bottom - y_top
+        pad_centers.append((int(center_x), int(center_y)))
+        pad_heights.append(int(height))
+        print(f"Pad {i+1}: Center=({int(center_x)}, {int(center_y)}), Height={int(height)}")
 
-    print(f"Located pad centers: {pad_centers}")
-    return pad_centers
+    return pad_centers, pad_heights
+
 
 def sample_pad_color(img, center, pad_height, default_sample_fraction=0.5, min_sample_size=5, max_sample_size=20):
-    print(f"Sampling Pad Color at {center} with est. height {pad_height:.0f}")
-    x, y = center
-    h, w = img.shape[:2]
+    print(f"Sampling pad color around center {center} with height {pad_height}")
+    center_x, center_y = center
 
-    # Determine sample size based on pad height (assume roughly square pads)
-    if pad_height > 0:
-        sample_size = int(pad_height * default_sample_fraction)
-        sample_size = max(min_sample_size, min(sample_size, max_sample_size)) # Clamp size
-    else:
-        sample_size = min_sample_size # Fallback if height is invalid
-    print(f"Using sample size: {sample_size}")
-
+    # Calculate sample area size based on pad height
+    sample_size = int(pad_height * default_sample_fraction)
+    # Clamp sample size to min/max bounds
+    sample_size = max(min_sample_size, min(sample_size, max_sample_size))
     half_size = sample_size // 2
-    x1 = max(0, x - half_size)
-    y1 = max(0, y - half_size)
-    x2 = min(w, x + half_size)
-    y2 = min(h, y + half_size)
-    
-    if y2 <= y1 or x2 <= x1: # Check bounds *after* calculating coords
-         print(f"Warning: Sample area for {center} is invalid or zero size ({x1},{y1} -> {x2},{y2}).")
-         return None
-    
-    sample_area = img[y1:y2, x1:x2]
-    if sample_area.size == 0:
-        print(f"Warning: Sample area empty for {center}.")
+
+    # Define the sampling region (ROI - Region of Interest)
+    y_start = max(0, center_y - half_size)
+    y_end = min(img.shape[0], center_y + half_size)
+    x_start = max(0, center_x - half_size)
+    x_end = min(img.shape[1], center_x + half_size)
+
+    # Ensure the ROI is valid
+    if y_start >= y_end or x_start >= x_end:
+        print(f"Warning: Invalid sampling ROI calculated for center {center}. Skipping.")
         return None
-        
-    lab_sample_area = cv2.cvtColor(sample_area, cv2.COLOR_BGR2LAB)
-    pixels = lab_sample_area.reshape(-1, 3)
-    median_lab = np.median(pixels, axis=0)
-    return median_lab.tolist()
 
+    roi = img[y_start:y_end, x_start:x_end]
+
+    # --- Color Calculation ---
+    # 1. Convert ROI to LAB color space (better for color difference)
+    try:
+        lab_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2LAB)
+    except cv2.error as e:
+        print(f"Error converting ROI to LAB: {e}. ROI shape: {roi.shape}, Center: {center}, Size: {sample_size}")
+        # If the ROI is tiny or invalid, conversion might fail
+        return None
+
+    # 2. Calculate the average LAB value
+    # Reshape to a list of pixels, then calculate mean over the 0-axis
+    pixels = lab_roi.reshape(-1, 3)
+    avg_lab = np.mean(pixels, axis=0)
+
+    print(f"Sampled ROI [{y_start}:{y_end}, {x_start}:{x_end}], Average LAB: {avg_lab.tolist()}")
+    return avg_lab.tolist() # Return as [L, A, B]
+
+
+# --- Color Matching Function ---
 def match_color(sampled_lab, parameter_key):
-    # TODO: Implement LAB distance + interpolation
-    print(f"TODO: Match Color for {parameter_key}")
-    
-    if sampled_lab is None:
-        return None, [] # No color sampled
+    # parameter_key is e.g., COLOR_KEY["pH"]
 
+    if sampled_lab is None:
+        return {"value": None, "is_normal": None, "error": "Invalid sample color"}
+
+    # Find the closest color in the key using Euclidean distance in LAB space
     min_dist = float('inf')
-    best_match_value = None
-    
-    # Simple closest match for now (Euclidean distance in LAB)
-    distances = []
-    for entry in COLOR_KEY[parameter_key]:
-        key_lab = entry["lab"]
-        dist = math.sqrt(sum([(a - b) ** 2 for a, b in zip(sampled_lab, key_lab)]))
-        distances.append({'dist': dist, 'value': entry['value']})
-        
-        # Basic closest match (replace with interpolation later)
+    closest_match = None
+
+    for entry in parameter_key:
+        key_lab = np.array(entry["lab"])
+        dist = np.linalg.norm(np.array(sampled_lab) - key_lab)
+
         if dist < min_dist:
             min_dist = dist
-            best_match_value = entry["value"]
+            closest_match = entry
 
-    # Sort distances for potential interpolation
-    distances.sort(key=lambda x: x['dist'])
+    if closest_match:
+        matched_value = closest_match["value"]
+        print(f"Closest match found: Value={matched_value}, LAB={closest_match['lab']}, Distance={min_dist:.2f}")
+        # Basic interpolation (needs improvement)
+        # Find the two closest points for potential interpolation
+        # This requires sorting the key by LAB distance or value first.
+        # For now, just return the closest discrete value.
+        return {"value": matched_value, "distance": min_dist}
+    else:
+        print("Could not find any color match.")
+        return {"value": None, "is_normal": None, "error": "No color match found"}
 
-    # --- Basic Interpolation (Example - Needs Refinement) ---
-    if len(distances) >= 2:
-        d1 = distances[0]['dist']
-        d2 = distances[1]['dist']
-        v1 = distances[0]['value']
-        v2 = distances[1]['value']
-        
-        total_dist = d1 + d2
-        if total_dist > 1e-6: # Avoid division by zero if colors are identical
-             # Weighted average based on inverse distance
-             interpolated_value = (v1 * d2 + v2 * d1) / total_dist
-             # Round based on parameter type (e.g., pH needs decimals)
-             if parameter_key == 'pH':
-                 best_match_value = round(interpolated_value, 1)
-             else:
-                 # Round ppm values sensibly (e.g., nearest whole number or 0.5)
-                 best_match_value = round(interpolated_value * 2) / 2 
-        else:
-             best_match_value = v1 # Exactly matched the first color
-
-
-    # Return interpolated value and sorted list of distances/values
-    return best_match_value, distances
-
-
+# --- Main Cloud Function --- #
 @functions_framework.http
 def process_test_strip(request):
-    """
-    HTTP Cloud Function to process a test strip image.
-    Expects a POST request with multipart/form-data containing an 'image' file.
-    """
-    if request.method != 'POST':
-        return 'Method Not Allowed', 405
+    # Check if the request has a file part
+    if 'file' not in request.files:
+        return 'No file part in the request', 400
 
-    # --- Authentication Check --- 
-    auth_header = request.headers.get('Authorization')
-    if not auth_header or not auth_header.startswith('Bearer '):
-        return 'Unauthorized: Missing or invalid Authorization header', 401
-    
-    id_token = auth_header.split('Bearer ')[1]
-    try:
-        decoded_token = auth.verify_id_token(id_token)
-        uid = decoded_token['uid']
-        print(f"Authenticated user: {uid}")
-    except Exception as e:
-        print(f"Token verification failed: {e}")
-        return f"Unauthorized: Token verification failed: {e}", 401
-    # --- End Authentication Check --- 
+    file = request.files['file']
 
-    image_file = request.files.get('image')
-    if not image_file:
-        return 'Missing image file in request', 400
+    # Check if the file is empty
+    if file.filename == '':
+        return 'No selected file', 400
 
-    try:
-        # Read image file into memory
-        image_bytes = image_file.read()
-        np_arr = np.frombuffer(image_bytes, np.uint8)
-        img_original = cv2.imdecode(np_arr, cv2.IMREAD_COLOR) # Keep original
+    if file:
+        try:
+            print("Received file. Reading image...")
+            # Read image file directly into OpenCV
+            # Read the file stream into a numpy array
+            filestr = file.read()
+            npimg = np.frombuffer(filestr, np.uint8)
+            # Decode the numpy array into an image
+            img = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
 
-        if img_original is None:
-            return 'Could not decode image', 400
-            
-        print(f"Image received, shape: {img_original.shape}")
+            if img is None:
+                 print("Error: Could not decode image.")
+                 return "Could not decode image", 400
 
-        # --- CV Processing Steps ---
-        
-        # 1. Detect Strip
-        strip_points = detect_strip(img_original)
-        if strip_points is None: # Check if None
-            return "Could not detect test strip in image.", 400
-            
-        # 2. Align/Correct Perspective
-        aligned_strip_img, M = align_strip(img_original, strip_points) 
-        if aligned_strip_img is None or aligned_strip_img.size == 0:
-             return "Failed to align/crop strip.", 500
-        print(f"Aligned strip shape: {aligned_strip_img.shape}")
+            print(f"Image decoded successfully. Shape: {img.shape}")
 
-        # 3. Locate Pads
-        pad_centers_relative, boundary_lines_y = locate_pads(aligned_strip_img)
-        if not pad_centers_relative or len(pad_centers_relative) != 7 or not boundary_lines_y or len(boundary_lines_y) != 8:
-             # Added check for boundary lines length
-             return f"Could not locate all 7 pads or 8 boundaries reliably.", 400
+            # 1. Detect the test strip boundaries
+            strip_points = detect_strip(img)
+            if strip_points is None:
+                 print("Error: Test strip not detected.")
+                 return "Test strip not detected", 400
 
-        parameter_order = [
-            "Total Hardness", "Total Chlorine", "Free Chlorine", 
-            "Bromine", "Total Alkalinity", "Cyanuric Acid", "pH"
-        ]
-        calculated_readings = {}
-        pad_coordinates_feedback = []
+            # 2. Align the strip (perspective correction)
+            aligned_strip, _ = align_strip(img, strip_points)
+            if aligned_strip is None:
+                 print("Error: Failed to align strip.")
+                 return "Failed to align strip", 400
 
-        # 4. Sample Pad Colors & 5. Match Colors
-        for i, parameter in enumerate(parameter_order):
-            center_relative = pad_centers_relative[i]
-            
-            # --- Calculate pad height for dynamic sampling --- 
-            pad_height_estimate = boundary_lines_y[i+1] - boundary_lines_y[i]
-            
-            # Sample color using dynamic size
-            sampled_lab = sample_pad_color(aligned_strip_img, center_relative, pad_height_estimate) 
-            
-            matched_value, _ = match_color(sampled_lab, parameter)
-            calculated_readings[parameter] = matched_value if matched_value is not None else "N/A"
+            # 3. Locate the individual test pads
+            # Pad order corresponds to COLOR_KEY order (visually from image)
+            pad_order = [
+                "Total Hardness", "Total Chlorine", "Free Chlorine", "pH",
+                "Total Alkalinity", "Cyanuric Acid", "Bromine"
+            ]
+            num_pads = len(pad_order)
 
-            # 6. Get Coordinates for Feedback (map back to original image)
-            # Use inverse transform M^-1 if perspective correction was applied
-            if M is not None:
-                # Need to reshape center_relative for perspectiveTransform
-                center_relative_arr = np.array([[center_relative]], dtype=np.float32)
-                # Calculate inverse matrix
-                try:
-                    M_inv = np.linalg.inv(M)
-                    original_coords = cv2.perspectiveTransform(center_relative_arr, M_inv)
-                    original_x = int(original_coords[0][0][0])
-                    original_y = int(original_coords[0][0][1])
-                except np.linalg.LinAlgError:
-                    print("Warning: Could not invert perspective matrix M. Falling back to bbox offset.")
-                    # Fallback: Approximate based on bounding box (less accurate if warped)
-                    # Need the original bounding box or points here for better fallback
-                    # For now, just use relative coords (which is wrong)
-                    original_x = center_relative[0] 
-                    original_y = center_relative[1]
-            else:
-                 # Fallback if M is None (e.g., align_strip just cropped)
-                 # Get original bounding box from points
-                 x_coords = strip_points[:, 0]
-                 y_coords = strip_points[:, 1]
-                 strip_x = int(np.min(x_coords))
-                 strip_y = int(np.min(y_coords))
-                 original_x = strip_x + center_relative[0]
-                 original_y = strip_y + center_relative[1]
-            
-            pad_coordinates_feedback.append({
-                'parameter': parameter,
-                'x': original_x,
-                'y': original_y,
-                'radius': 5 
-            })
+            # Adjust locate_pads to handle potential vertical orientation
+            # Check aspect ratio of aligned_strip. If height > width, it's likely vertical.
+            aligned_height, aligned_width = aligned_strip.shape[:2]
+            if aligned_height < aligned_width:
+                 print("Aligned strip appears horizontal. Rotating 90 degrees.")
+                 aligned_strip = cv2.rotate(aligned_strip, cv2.ROTATE_90_CLOCKWISE)
+                 aligned_height, aligned_width = aligned_strip.shape[:2] # Update dimensions
 
-        # --- Prepare Response ---
-        response_data = {
-            'readings': calculated_readings,
-            'padCoordinates': pad_coordinates_feedback, 
-            'normalRanges': NORMAL_RANGES 
-        }
-        print("Processing Complete. Response:", response_data)
-        return response_data, 200
+            pad_locations = locate_pads(aligned_strip, num_pads=num_pads)
+            if pad_locations is None:
+                print("Error: Could not locate test pads.")
+                # Try flipping vertical orientation if detection fails?
+                # aligned_strip = cv2.rotate(aligned_strip, cv2.ROTATE_180)
+                # pad_locations = locate_pads(aligned_strip, num_pads=num_pads)
+                # if pad_locations is None:
+                #     print("Error: Could not locate test pads even after flipping.")
+                #     return "Could not locate test pads", 400
+                return "Could not locate test pads", 400
 
-    except Exception as e:
-        print(f"Error processing image: {e}")
-        import traceback
-        traceback.print_exc() # Print full traceback for debugging
-        return 'Internal Server Error processing image', 500 
+            pad_centers, pad_heights = pad_locations
+
+            # Ensure we got the expected number of pads
+            if len(pad_centers) != num_pads or len(pad_heights) != num_pads:
+                print(f"Error: Expected {num_pads} pads, but found {len(pad_centers)} centers and {len(pad_heights)} heights.")
+                return f"Could not locate all {num_pads} test pads accurately.", 400
+
+            # 4. Sample color from each pad
+            results = {}
+            print("\n--- Sampling Pad Colors ---")
+            for i, param_name in enumerate(pad_order):
+                print(f"Processing: {param_name} (Pad {i+1})")
+                center = pad_centers[i]
+                height = pad_heights[i]
+                sampled_lab = sample_pad_color(aligned_strip, center, height)
+
+                if sampled_lab is None:
+                    print(f"-> Failed to sample color for {param_name}")
+                    results[param_name] = {"value": None, "is_normal": None, "error": "Sampling failed"}
+                    continue
+
+                # 5. Match color to the key and determine value
+                parameter_key = COLOR_KEY.get(param_name)
+                if not parameter_key:
+                     print(f"-> Error: No color key found for parameter: {param_name}")
+                     results[param_name] = {"value": None, "is_normal": None, "error": f"Missing color key for {param_name}"}
+                     continue
+
+                match_result = match_color(sampled_lab, parameter_key)
+
+                # 6. Check if the value is within the normal range
+                normal_range = NORMAL_RANGES.get(param_name)
+                is_normal = None
+                if match_result.get("value") is not None and normal_range:
+                    is_normal = normal_range["min"] <= match_result["value"] <= normal_range["max"]
+                
+                results[param_name] = {
+                    "value": match_result.get("value"),
+                    "is_normal": is_normal,
+                    "sampled_lab": sampled_lab, # Include for debugging
+                    "match_distance": match_result.get("distance") # Include for debugging
+                }
+                print(f"-> Matched Value: {results[param_name]['value']}, Normal: {results[param_name]['is_normal']}\n")
+
+            print("--- Processing Complete ---")
+            # Return results as JSON
+            # Convert numpy types to standard Python types for JSON serialization if needed
+            # (Not strictly necessary here as results are built from Python types)
+            return results, 200
+
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
+            import traceback
+            traceback.print_exc() # Log the full stack trace
+            return f"Internal server error: {e}", 500
+
+    return 'File not processed', 400 

@@ -3,6 +3,7 @@ firebase-admin>=6.0.0
 
 # Firebase Functions Framework for Python
 functions-framework>=3.0.0
+firebase-functions>=0.2.0
 
 # OpenCV for image processing
 opencv-python-headless>=4.5.0 # Use headless if no GUI needed
