@@ -1,6 +1,11 @@
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const cors = require("cors")({origin: true});
+const sharp = require("sharp");
+const Busboy = require("busboy");
+const os = require("os");
+const path = require("path");
+const fs = require("fs");
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -901,6 +906,144 @@ function calculateChemicalAdjustment(
   if (finalAmount <= 0) return null;
 
   return [finalAmount, finalUnit, direction, dosageInfo.productName];
+}
+
+// --- Test Strip Color Definitions ---
+
+// Pre-calculated LAB values for color matching
+const COLOR_KEY = {
+    "Total Hardness": [
+        {"lab": [47, -11, 5], "value": 0},
+        {"lab": [46, 12, -1], "value": 25},
+        {"lab": [46, 19, 0], "value": 50},
+        {"lab": [49, 19, -1], "value": 120},
+        {"lab": [51, 24, 0], "value": 250},
+        {"lab": [52, 29, 1], "value": 425}
+    ],
+    "Total Chlorine": [
+        {"lab": [99, -6, 26], "value": 0},
+        {"lab": [98, -11, 23], "value": 0.5},
+        {"lab": [93, -14, 23], "value": 1},
+        {"lab": [89, -19, 27], "value": 3},
+        {"lab": [84, -21, 25], "value": 5},
+        {"lab": [76, -29, 10], "value": 10},
+        {"lab": [72, -32, 6], "value": 20}
+    ],
+    "Free Chlorine": [
+        {"lab": [100, 0, 0], "value": 0}, // Theoretical white
+        {"lab": [96, 7, -1], "value": 0.5},
+        {"lab": [91, 14, -1], "value": 1},
+        {"lab": [73, 35, -10], "value": 3},
+        {"lab": [59, 41, -10], "value": 5},
+        {"lab": [52, 34, -4], "value": 10},
+        {"lab": [46, 29, -3], "value": 20}
+    ],
+    "Bromine": [
+        {"lab": [100, 0, 0], "value": 0}, // Theoretical white
+        {"lab": [96, 7, -1], "value": 1},
+        {"lab": [91, 14, -1], "value": 2},
+        {"lab": [73, 35, -10], "value": 6},
+        {"lab": [59, 41, -10], "value": 10},
+        {"lab": [52, 34, -4], "value": 20},
+        {"lab": [46, 29, -3], "value": 40}
+    ],
+    "Total Alkalinity": [
+        {"lab": [96, -5, 32], "value": 0},
+        {"lab": [93, -24, 25], "value": 40},
+        {"lab": [80, -29, 24], "value": 80},
+        {"lab": [67, -32, 18], "value": 120},
+        {"lab": [57, -30, 8], "value": 180},
+        {"lab": [47, -26, 2], "value": 240},
+        {"lab": [40, -21, 0], "value": 360}
+    ],
+    "Cyanuric Acid": [
+        {"lab": [86, 10, 26], "value": 0},
+        {"lab": [83, 11, 25], "value": 40}, // Simplified 30-50
+        {"lab": [79, 14, 26], "value": 100},
+        {"lab": [76, 16, 25], "value": 150},
+        {"lab": [72, 19, 23], "value": 240}
+    ],
+     "pH": [
+        {"lab": [79, 25, 29], "value": 6.2},
+        {"lab": [75, 30, 32], "value": 6.8},
+        {"lab": [71, 36, 34], "value": 7.2},
+        {"lab": [66, 42, 36], "value": 7.8},
+        {"lab": [61, 48, 37], "value": 8.4},
+        {"lab": [57, 52, 37], "value": 9.0}
+    ]
+};
+
+const NORMAL_RANGES = {
+    "Total Hardness": {"min": 120, "max": 250},
+    "Total Chlorine": {"min": 1, "max": 5},
+    "Free Chlorine": {"min": 1, "max": 5},
+    "Bromine": {"min": 2, "max": 10},
+    "Total Alkalinity": {"min": 80, "max": 120},
+    "Cyanuric Acid": {"min": 30, "max": 100}, // Covers 40 and 100 blocks
+    "pH": {"min": 7.2, "max": 7.8}
+};
+
+const PAD_ORDER = [
+    "Total Hardness", "Total Chlorine", "Free Chlorine", "pH",
+    "Total Alkalinity", "Cyanuric Acid", "Bromine"
+];
+const NUM_PADS = PAD_ORDER.length;
+
+/**
+ * Calculates the Euclidean distance between two LAB colors.
+ * @param {number[]} lab1 First LAB color [L, a, b].
+ * @param {number[]} lab2 Second LAB color [L, a, b].
+ * @return {number} The distance.
+ */
+function calculateLabDistance(lab1, lab2) {
+  if (!lab1 || !lab2 || lab1.length !== 3 || lab2.length !== 3) {
+    return Infinity;
+  }
+  return Math.sqrt(
+      Math.pow(lab1[0] - lab2[0], 2) + // L
+      Math.pow(lab1[1] - lab2[1], 2) + // a
+      Math.pow(lab1[2] - lab2[2], 2)   // b
+  );
+}
+
+/**
+ * Finds the closest color match in the COLOR_KEY for a given parameter.
+ * @param {number[]} sampledLab The sampled LAB color [L, a, b].
+ * @param {string} parameterName The name of the parameter (e.g., "pH").
+ * @return {object} Result containing value, distance, or error.
+ */
+async function matchColor(sampledLab, parameterName) {
+  // Dynamically import color-convert here
+  const convert = (await import('color-convert')).default;
+
+  const parameterKey = COLOR_KEY[parameterName];
+  if (!parameterKey) {
+    console.error(`No color key found for parameter: ${parameterName}`);
+    return {value: null, distance: null, error: `Missing color key`};
+  }
+  if (!sampledLab) {
+    return {value: null, distance: null, error: "Invalid sample color"};
+  }
+
+  let minDistance = Infinity;
+  let closestMatch = null;
+
+  for (const entry of parameterKey) {
+    const distance = calculateLabDistance(sampledLab, entry.lab);
+    if (distance < minDistance) {
+      minDistance = distance;
+      closestMatch = entry;
+    }
+  }
+
+  if (closestMatch) {
+    console.log(`Color match for ${parameterName}: Value=${closestMatch.value}, Dist=${minDistance.toFixed(2)}`);
+    // Basic matching, no interpolation for now
+    return {value: closestMatch.value, distance: minDistance};
+  } else {
+    console.error(`Could not find any color match for ${parameterName}`);
+    return {value: null, distance: null, error: "No color match found"};
+  }
 }
 
 // --- Cloud Functions ---

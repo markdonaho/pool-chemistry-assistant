@@ -47,8 +47,9 @@ export const TestStripProvider = ({ children }) => {
       // formData.append('system', systemType);
 
       // 3. Fetch from Backend
-      // TODO: Replace with actual deployed function URL or emulator URL from config
-      const backendUrl = config.apiUrl + (config.endpoints.processTestStrip || '/process-test-strip'); 
+      // Use the direct GCP function URL for processTestStrip
+      const backendUrl = 'https://processteststrip-pjfngl6oca-uc.a.run.app'; 
+      // const backendUrl = config.apiUrl + (config.endpoints.processTestStrip || '/process-test-strip'); // OLD WAY
       console.log(`Calling backend: ${backendUrl}`);
       
       const response = await fetch(backendUrl, {

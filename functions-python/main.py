@@ -1,14 +1,15 @@
 # Python Cloud Functions
 import functions_framework
 import firebase_admin
-from firebase_admin import initialize_app, credentials, auth # Import auth
-import numpy as np
-import cv2
+from firebase_admin import initialize_app, auth # <<< Add auth here
+import numpy as np # Keep imports to see if they cause timeout
+import cv2         # Keep imports to see if they cause timeout
 import os
-import math # Needed for Euclidean distance
+import math
+import traceback # Keep this for error logging
+from flask import make_response
 
 # Initialize Firebase Admin SDK (if not already initialized)
-# Use application default credentials locally or on GCP/Cloud Functions
 try:
     if not firebase_admin._apps:
         initialize_app()
@@ -16,31 +17,8 @@ except ValueError as e:
     print(f"Firebase Admin SDK already initialized? {e}")
 
 
-def order_points(pts):
-    # Initialzie a list of coordinates that will be ordered
-    # such that the first entry in the list is the top-left,
-    # the second entry is the top-right, the third is the
-    # bottom-right, and the fourth is the bottom-left
-    rect = np.zeros((4, 2), dtype="float32")
-
-    # The top-left point will have the smallest sum, whereas
-    # the bottom-right point will have the largest sum
-    s = pts.sum(axis=1)
-    rect[0] = pts[np.argmin(s)]
-    rect[2] = pts[np.argmax(s)]
-
-    # Now, compute the difference between the points, the
-    # top-right point will have the smallest difference,
-    # whereas the bottom-left will have the largest difference
-    diff = np.diff(pts, axis=1)
-    rect[1] = pts[np.argmin(diff)]
-    rect[3] = pts[np.argmax(diff)]
-
-    # return the ordered coordinates
-    return rect
-
 # --- Define Color Key (Using pre-calculated LAB values) ---
-# Structure: { parameter: [ { lab: [L, a, b], value: ppm/pH }, ... ] }
+# Keep this - it's just data assignment
 COLOR_KEY = {
     "Total Hardness": [
         {"lab": [47, -11, 5], "value": 0},
@@ -104,7 +82,7 @@ COLOR_KEY = {
 }
 
 # --- Define Normal Ranges (Based on Green Bars) ---
-# Structure: { parameter: { min: value, max: value } }
+# Keep this - it's just data assignment
 NORMAL_RANGES = {
     "Total Hardness": {"min": 120, "max": 250},
     "Total Chlorine": {"min": 1, "max": 5}, # Approximate range covering 1, 3, 5
@@ -117,7 +95,29 @@ NORMAL_RANGES = {
     # The green bars are 7.2-7.8. Let's stick to the green bars for visual consistency.
 }
 
+# --- Uncommented Helper Functions ---
+def order_points(pts):
+    # Initialzie a list of coordinates that will be ordered
+    # such that the first entry in the list is the top-left,
+    # the second entry is the top-right, the third is the
+    # bottom-right, and the fourth is the bottom-left
+    rect = np.zeros((4, 2), dtype="float32")
 
+    # The top-left point will have the smallest sum, whereas
+    # the bottom-right point will have the largest sum
+    s = pts.sum(axis=1)
+    rect[0] = pts[np.argmin(s)]
+    rect[2] = pts[np.argmax(s)]
+
+    # Now, compute the difference between the points, the
+    # top-right point will have the smallest difference,
+    # whereas the bottom-left will have the largest difference
+    diff = np.diff(pts, axis=1)
+    rect[1] = pts[np.argmin(diff)]
+    rect[3] = pts[np.argmax(diff)]
+
+    # return the ordered coordinates
+    return rect
 
 def detect_strip(img):
     print("Detecting strip...")
@@ -134,7 +134,7 @@ def detect_strip(img):
     # 3. Edge Detection (adjust thresholds as needed)
     # Lower thresholds detect weaker edges, higher thresholds detect stronger edges.
     # Experimentation might be needed based on test images.
-    edged = cv2.Canny(blurred, 50, 150)
+    edged = cv2.Canny(blurred, 50, 150) 
 
     # 4. Find Contours
     # Use RETR_LIST and CHAIN_APPROX_SIMPLE for efficiency
@@ -154,28 +154,28 @@ def detect_strip(img):
         if area < min_strip_area or area > max_strip_area:
             # print(f"Contour area {area:.0f} outside range ({min_strip_area:.0f}-{max_strip_area:.0f}). Skipping.")
             continue
-
+            
         # Approximate the contour shape
         peri = cv2.arcLength(c, True)
-        # Epsilon: Parameter specifying the approximation accuracy.
+        # Epsilon: Parameter specifying the approximation accuracy. 
         # Smaller value -> more points, closer to original shape.
         # Larger value -> fewer points, more approximated shape.
         # 0.02 * peri is a common starting point.
-        approx = cv2.approxPolyDP(c, 0.03 * peri, True)
+        approx = cv2.approxPolyDP(c, 0.03 * peri, True) 
 
         # Check if the approximation has 4 vertices (is a quadrilateral)
         if len(approx) == 4:
             # Calculate bounding box and aspect ratio
             (x, y, w, h) = cv2.boundingRect(approx)
             aspect_ratio = float(w) / h
-
+            
             # Define expected aspect ratio range (strip is tall and narrow)
             # Or wide and short depending on orientation, allow both
             min_aspect_ratio = 0.1 # e.g., width is 10% of height
             max_aspect_ratio = 10.0 # e.g., width is 10x height (allows horizontal)
-
+            
             is_valid_aspect_ratio = (aspect_ratio >= min_aspect_ratio and aspect_ratio <= 1.0 / min_aspect_ratio)
-
+            
             print(f"Contour 4 vertices. Area: {area:.0f}, Aspect Ratio: {aspect_ratio:.2f}")
             if is_valid_aspect_ratio:
                  found_strip_contour_points = approx # Store the points
@@ -296,7 +296,7 @@ def locate_pads(aligned_img, num_pads=7):
     # --- Clustering (Simple approach: average position) ---
     # This is a very basic clustering. More robust methods (DBSCAN, KMeans) might be needed.
     # For now, let's assume the major horizontal lines define pad boundaries.
-
+    
     if not horizontal_lines:
         print("No horizontal lines found after filtering.")
         return None
@@ -425,18 +425,83 @@ def match_color(sampled_lab, parameter_key):
         print("Could not find any color match.")
         return {"value": None, "is_normal": None, "error": "No color match found"}
 
-# --- Main Cloud Function --- #
+# --- NEW Helper Function ---
+async def validate_token(request):
+    """Validates the Firebase ID token from the Authorization header."""
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise ValueError("Missing or invalid Authorization header")
+
+    token = auth_header.split("Bearer ")[1]
+    try:
+        # Verify the ID token while checking if the token is revoked.
+        decoded_token = await auth.verify_id_token(token, check_revoked=True)
+        uid = decoded_token['uid']
+        print(f"Token validated successfully for UID: {uid}")
+        return uid
+    except auth.RevokedIdTokenError:
+        # Token has been revoked. Inform the user to reauthenticate or signOut().
+        raise ValueError("ID token has been revoked.")
+    except auth.UserDisabledError:
+        # Token belongs to a disabled user account.
+        raise ValueError("User account is disabled.")
+    except auth.InvalidIdTokenError as e:
+        # Token is invalid for other reasons.
+        raise ValueError(f"Token verification failed: {e}")
+    except Exception as e:
+        # Catch any other unexpected errors during validation
+        raise ValueError(f"Unexpected error during token validation: {e}")
+
+# --- Main Cloud Function (Modified for CORS Preflight) --- #
 @functions_framework.http
-def process_test_strip(request):
-    # Check if the request has a file part
+async def process_test_strip(request): # Still async
+
+    # === CORS Preflight Handling ===
+    # Set CORS headers for the preflight request
+    if request.method == 'OPTIONS':
+        # Allows GET requests from any origin with the Content-Type
+        # header and caches preflight response for an 3600s
+        headers = {
+            'Access-Control-Allow-Origin': '*', # Or restrict to your frontend domain
+            'Access-Control-Allow-Methods': 'POST, OPTIONS', # Allow POST and OPTIONS
+            'Access-Control-Allow-Headers': 'Authorization, Content-Type', # Allow necessary headers
+            'Access-Control-Max-Age': '3600'
+        }
+        # Return empty response with headers for OPTIONS
+        return make_response('', 204, headers)
+    # === End CORS Preflight Handling ===
+
+    # --- Set CORS headers for the main request ---
+    # These headers are returned for the actual POST request success/failure
+    cors_headers = {
+        'Access-Control-Allow-Origin': '*' # Or restrict to your frontend domain
+    }
+
+    # --- Authentication Check ---
+    try:
+        uid = await validate_token(request)
+        # If you need the UID later, you have it here.
+    except ValueError as e:
+        print(f"Authentication error: {e}")
+        # Return 401 with CORS headers
+        return make_response(f"Unauthorized: {e}", 401, cors_headers)
+    except Exception as e:
+        # Catch unexpected errors during auth validation
+        print(f"Unexpected authentication error: {e}")
+         # Return 500 with CORS headers
+        return make_response("Internal Server Error during authentication", 500, cors_headers)
+    # --- End Authentication Check ---
+
+    # --- Original Function Body ---
     if 'file' not in request.files:
-        return 'No file part in the request', 400
+         # Return 400 with CORS headers
+        return make_response('No file part in the request', 400, cors_headers)
 
     file = request.files['file']
 
-    # Check if the file is empty
     if file.filename == '':
-        return 'No selected file', 400
+         # Return 400 with CORS headers
+        return make_response('No selected file', 400, cors_headers)
 
     if file:
         try:
@@ -450,7 +515,8 @@ def process_test_strip(request):
 
             if img is None:
                  print("Error: Could not decode image.")
-                 return "Could not decode image", 400
+                 # Return 400 with CORS headers
+                 return make_response("Could not decode image", 400, cors_headers)
 
             print(f"Image decoded successfully. Shape: {img.shape}")
 
@@ -458,13 +524,15 @@ def process_test_strip(request):
             strip_points = detect_strip(img)
             if strip_points is None:
                  print("Error: Test strip not detected.")
-                 return "Test strip not detected", 400
+                 # Return 400 with CORS headers
+                 return make_response("Test strip not detected", 400, cors_headers)
 
             # 2. Align the strip (perspective correction)
             aligned_strip, _ = align_strip(img, strip_points)
             if aligned_strip is None:
                  print("Error: Failed to align strip.")
-                 return "Failed to align strip", 400
+                 # Return 400 with CORS headers
+                 return make_response("Failed to align strip", 400, cors_headers)
 
             # 3. Locate the individual test pads
             # Pad order corresponds to COLOR_KEY order (visually from image)
@@ -485,20 +553,16 @@ def process_test_strip(request):
             pad_locations = locate_pads(aligned_strip, num_pads=num_pads)
             if pad_locations is None:
                 print("Error: Could not locate test pads.")
-                # Try flipping vertical orientation if detection fails?
-                # aligned_strip = cv2.rotate(aligned_strip, cv2.ROTATE_180)
-                # pad_locations = locate_pads(aligned_strip, num_pads=num_pads)
-                # if pad_locations is None:
-                #     print("Error: Could not locate test pads even after flipping.")
-                #     return "Could not locate test pads", 400
-                return "Could not locate test pads", 400
+                # Return 400 with CORS headers
+                return make_response("Could not locate test pads", 400, cors_headers)
 
             pad_centers, pad_heights = pad_locations
 
             # Ensure we got the expected number of pads
             if len(pad_centers) != num_pads or len(pad_heights) != num_pads:
                 print(f"Error: Expected {num_pads} pads, but found {len(pad_centers)} centers and {len(pad_heights)} heights.")
-                return f"Could not locate all {num_pads} test pads accurately.", 400
+                # Return 400 with CORS headers
+                return make_response(f"Could not locate all {num_pads} test pads accurately.", 400, cors_headers)
 
             # 4. Sample color from each pad
             results = {}
@@ -538,15 +602,16 @@ def process_test_strip(request):
                 print(f"-> Matched Value: {results[param_name]['value']}, Normal: {results[param_name]['is_normal']}\n")
 
             print("--- Processing Complete ---")
-            # Return results as JSON
-            # Convert numpy types to standard Python types for JSON serialization if needed
-            # (Not strictly necessary here as results are built from Python types)
-            return results, 200
+             # Return 200 with results and CORS headers
+            # Use make_response to include CORS headers with the JSON response
+            # Flask automatically handles dict -> JSON conversion with make_response
+            return make_response(results, 200, cors_headers)
 
         except Exception as e:
             print(f"An unexpected error occurred: {e}")
-            import traceback
             traceback.print_exc() # Log the full stack trace
-            return f"Internal server error: {e}", 500
+             # Return 500 with CORS headers
+            return make_response(f"Internal server error: {e}", 500, cors_headers)
 
-    return 'File not processed', 400 
+    # Return 400 with CORS headers if file processing didn't happen
+    return make_response('File not processed', 400, cors_headers) 
