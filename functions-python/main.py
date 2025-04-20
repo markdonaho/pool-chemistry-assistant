@@ -7,7 +7,8 @@ import cv2         # Keep imports to see if they cause timeout
 import os
 import math
 import traceback # Keep this for error logging
-from flask import make_response
+from flask import make_response, request # Keep request import
+import asyncio # <<< Import asyncio
 
 # Initialize Firebase Admin SDK (if not already initialized)
 try:
@@ -452,55 +453,40 @@ async def validate_token(request):
         # Catch any other unexpected errors during validation
         raise ValueError(f"Unexpected error during token validation: {e}")
 
-# --- Main Cloud Function (Modified for CORS Preflight) --- #
+# --- Main Cloud Function (Modified to be SYNCHRONOUS) --- #
 @functions_framework.http
-async def process_test_strip(request): # Still async
+def process_test_strip(request): # <<< REMOVE async here
 
     # === CORS Preflight Handling ===
-    # Set CORS headers for the preflight request
-    if request.method == 'OPTIONS':
-        # Allows GET requests from any origin with the Content-Type
-        # header and caches preflight response for an 3600s
-        headers = {
-            'Access-Control-Allow-Origin': '*', # Or restrict to your frontend domain
-            'Access-Control-Allow-Methods': 'POST, OPTIONS', # Allow POST and OPTIONS
-            'Access-Control-Allow-Headers': 'Authorization, Content-Type', # Allow necessary headers
-            'Access-Control-Max-Age': '3600'
-        }
-        # Return empty response with headers for OPTIONS
-        return make_response('', 204, headers)
-    # === End CORS Preflight Handling ===
-
-    # --- Set CORS headers for the main request ---
-    # These headers are returned for the actual POST request success/failure
     cors_headers = {
-        'Access-Control-Allow-Origin': '*' # Or restrict to your frontend domain
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+        'Access-Control-Max-Age': '3600'
     }
+    if request.method == 'OPTIONS':
+        return make_response('', 204, cors_headers)
+    # === End CORS Preflight Handling ===
 
     # --- Authentication Check ---
     try:
-        uid = await validate_token(request)
-        # If you need the UID later, you have it here.
+        # Run the async validation function synchronously
+        uid = asyncio.run(validate_token(request)) # <<< Use asyncio.run()
     except ValueError as e:
         print(f"Authentication error: {e}")
-        # Return 401 with CORS headers
         return make_response(f"Unauthorized: {e}", 401, cors_headers)
     except Exception as e:
-        # Catch unexpected errors during auth validation
         print(f"Unexpected authentication error: {e}")
-         # Return 500 with CORS headers
         return make_response("Internal Server Error during authentication", 500, cors_headers)
     # --- End Authentication Check ---
 
-    # --- Original Function Body ---
+    # --- Original Function Body (remains synchronous) ---
     if 'file' not in request.files:
-         # Return 400 with CORS headers
         return make_response('No file part in the request', 400, cors_headers)
 
     file = request.files['file']
 
     if file.filename == '':
-         # Return 400 with CORS headers
         return make_response('No selected file', 400, cors_headers)
 
     if file:
@@ -514,25 +500,22 @@ async def process_test_strip(request): # Still async
             img = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
 
             if img is None:
-                 print("Error: Could not decode image.")
-                 # Return 400 with CORS headers
-                 return make_response("Could not decode image", 400, cors_headers)
+                print("Error: Could not decode image.")
+                return make_response("Could not decode image", 400, cors_headers)
 
             print(f"Image decoded successfully. Shape: {img.shape}")
 
             # 1. Detect the test strip boundaries
             strip_points = detect_strip(img)
             if strip_points is None:
-                 print("Error: Test strip not detected.")
-                 # Return 400 with CORS headers
-                 return make_response("Test strip not detected", 400, cors_headers)
+                print("Error: Test strip not detected.")
+                return make_response("Test strip not detected", 400, cors_headers)
 
             # 2. Align the strip (perspective correction)
             aligned_strip, _ = align_strip(img, strip_points)
             if aligned_strip is None:
-                 print("Error: Failed to align strip.")
-                 # Return 400 with CORS headers
-                 return make_response("Failed to align strip", 400, cors_headers)
+                print("Error: Failed to align strip.")
+                return make_response("Failed to align strip", 400, cors_headers)
 
             # 3. Locate the individual test pads
             # Pad order corresponds to COLOR_KEY order (visually from image)
@@ -546,14 +529,13 @@ async def process_test_strip(request): # Still async
             # Check aspect ratio of aligned_strip. If height > width, it's likely vertical.
             aligned_height, aligned_width = aligned_strip.shape[:2]
             if aligned_height < aligned_width:
-                 print("Aligned strip appears horizontal. Rotating 90 degrees.")
-                 aligned_strip = cv2.rotate(aligned_strip, cv2.ROTATE_90_CLOCKWISE)
-                 aligned_height, aligned_width = aligned_strip.shape[:2] # Update dimensions
+                print("Aligned strip appears horizontal. Rotating 90 degrees.")
+                aligned_strip = cv2.rotate(aligned_strip, cv2.ROTATE_90_CLOCKWISE)
+                aligned_height, aligned_width = aligned_strip.shape[:2] # Update dimensions
 
             pad_locations = locate_pads(aligned_strip, num_pads=num_pads)
             if pad_locations is None:
                 print("Error: Could not locate test pads.")
-                # Return 400 with CORS headers
                 return make_response("Could not locate test pads", 400, cors_headers)
 
             pad_centers, pad_heights = pad_locations
@@ -561,7 +543,6 @@ async def process_test_strip(request): # Still async
             # Ensure we got the expected number of pads
             if len(pad_centers) != num_pads or len(pad_heights) != num_pads:
                 print(f"Error: Expected {num_pads} pads, but found {len(pad_centers)} centers and {len(pad_heights)} heights.")
-                # Return 400 with CORS headers
                 return make_response(f"Could not locate all {num_pads} test pads accurately.", 400, cors_headers)
 
             # 4. Sample color from each pad
@@ -581,9 +562,9 @@ async def process_test_strip(request): # Still async
                 # 5. Match color to the key and determine value
                 parameter_key = COLOR_KEY.get(param_name)
                 if not parameter_key:
-                     print(f"-> Error: No color key found for parameter: {param_name}")
-                     results[param_name] = {"value": None, "is_normal": None, "error": f"Missing color key for {param_name}"}
-                     continue
+                    print(f"-> Error: No color key found for parameter: {param_name}")
+                    results[param_name] = {"value": None, "is_normal": None, "error": f"Missing color key for {param_name}"}
+                    continue
 
                 match_result = match_color(sampled_lab, parameter_key)
 
@@ -602,16 +583,11 @@ async def process_test_strip(request): # Still async
                 print(f"-> Matched Value: {results[param_name]['value']}, Normal: {results[param_name]['is_normal']}\n")
 
             print("--- Processing Complete ---")
-             # Return 200 with results and CORS headers
-            # Use make_response to include CORS headers with the JSON response
-            # Flask automatically handles dict -> JSON conversion with make_response
-            return make_response(results, 200, cors_headers)
+            return make_response(results, 200, cors_headers) # Make sure 'results' is defined before this line
 
         except Exception as e:
             print(f"An unexpected error occurred: {e}")
             traceback.print_exc() # Log the full stack trace
-             # Return 500 with CORS headers
             return make_response(f"Internal server error: {e}", 500, cors_headers)
 
-    # Return 400 with CORS headers if file processing didn't happen
     return make_response('File not processed', 400, cors_headers) 
