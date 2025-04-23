@@ -123,46 +123,44 @@ def order_points(pts):
 def detect_strip(img):
     print("Detecting strip...")
     img_height, img_width = img.shape[:2]
-    min_strip_area = img_height * img_width * 0.01 # Strip should be at least 1% of image area
-    max_strip_area = img_height * img_width * 0.80 # Strip shouldn't be the whole image
+    
+    # Adjust area constraints - test strip should be a significant portion of the image
+    min_strip_area = img_height * img_width * 0.05  # Increased from 1% to 5%
+    max_strip_area = img_height * img_width * 0.50  # Reduced from 80% to 50%
 
-    # 1. Grayscale
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
-    # 2. Blur
-    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-
-    # 3. Edge Detection (adjust thresholds as needed)
-    # Lower thresholds detect weaker edges, higher thresholds detect stronger edges.
-    # Experimentation might be needed based on test images.
-    edged = cv2.Canny(blurred, 50, 150) 
-
-    # 4. Find Contours
-    # Use RETR_LIST and CHAIN_APPROX_SIMPLE for efficiency
-    contours, _ = cv2.findContours(edged.copy(), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-
+    # 1. Convert to LAB color space to better handle lighting variations
+    lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+    l, a, b = cv2.split(lab)
+    
+    # 2. Apply adaptive thresholding to handle varying lighting conditions
+    thresh = cv2.adaptiveThreshold(l, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                                 cv2.THRESH_BINARY_INV, 11, 2)
+    
+    # 3. Apply morphological operations to clean up the image
+    kernel = np.ones((5,5), np.uint8)
+    morph = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+    morph = cv2.morphologyEx(morph, cv2.MORPH_OPEN, kernel)
+    
+    # 4. Find contours
+    contours, _ = cv2.findContours(morph, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
     if not contours:
         print("No contours found.")
         return None
 
     # 5. Filter & Select Contours
     # Sort contours by area (largest first)
-    contours = sorted(contours, key=cv2.contourArea, reverse=True)[:10] # Check top 10 largest
+    contours = sorted(contours, key=cv2.contourArea, reverse=True)[:5]  # Check top 5 largest
 
-    found_strip_contour_points = None # Store the 4 points
+    found_strip_contour_points = None
     for c in contours:
         area = cv2.contourArea(c)
         if area < min_strip_area or area > max_strip_area:
-            # print(f"Contour area {area:.0f} outside range ({min_strip_area:.0f}-{max_strip_area:.0f}). Skipping.")
             continue
             
         # Approximate the contour shape
         peri = cv2.arcLength(c, True)
-        # Epsilon: Parameter specifying the approximation accuracy. 
-        # Smaller value -> more points, closer to original shape.
-        # Larger value -> fewer points, more approximated shape.
-        # 0.02 * peri is a common starting point.
-        approx = cv2.approxPolyDP(c, 0.03 * peri, True) 
+        approx = cv2.approxPolyDP(c, 0.02 * peri, True)  # Reduced epsilon for more precise shape
 
         # Check if the approximation has 4 vertices (is a quadrilateral)
         if len(approx) == 4:
@@ -170,30 +168,41 @@ def detect_strip(img):
             (x, y, w, h) = cv2.boundingRect(approx)
             aspect_ratio = float(w) / h
             
-            # Define expected aspect ratio range (strip is tall and narrow)
-            # Or wide and short depending on orientation, allow both
-            min_aspect_ratio = 0.1 # e.g., width is 10% of height
-            max_aspect_ratio = 10.0 # e.g., width is 10x height (allows horizontal)
+            # Define expected aspect ratio range (strip is typically tall and narrow)
+            min_aspect_ratio = 0.2  # Increased from 0.1
+            max_aspect_ratio = 5.0  # Reduced from 10.0
             
-            is_valid_aspect_ratio = (aspect_ratio >= min_aspect_ratio and aspect_ratio <= 1.0 / min_aspect_ratio)
+            is_valid_aspect_ratio = (aspect_ratio >= min_aspect_ratio and aspect_ratio <= max_aspect_ratio)
             
             print(f"Contour 4 vertices. Area: {area:.0f}, Aspect Ratio: {aspect_ratio:.2f}")
             if is_valid_aspect_ratio:
-                 found_strip_contour_points = approx # Store the points
-                 print("Found potential strip contour meeting aspect ratio criteria.")
-                 break # Found a likely candidate
-            # else:
-                # print(f"Contour has {len(approx)} vertices. Skipping.")
+                # Additional check: Verify the contour is relatively straight
+                # by checking the angles between adjacent sides
+                points = approx.reshape(4, 2)
+                angles = []
+                for i in range(4):
+                    p1 = points[i]
+                    p2 = points[(i+1)%4]
+                    p3 = points[(i+2)%4]
+                    v1 = p1 - p2
+                    v2 = p3 - p2
+                    angle = np.arccos(np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2)))
+                    angles.append(np.degrees(angle))
+                
+                # Check if angles are close to 90 degrees (allowing some tolerance)
+                if all(70 <= angle <= 110 for angle in angles):
+                    found_strip_contour_points = approx
+                    print("Found potential strip contour meeting all criteria.")
+                    break
 
     if found_strip_contour_points is None:
-        print("Could not find a suitable 4-vertex contour with valid aspect ratio.")
+        print("Could not find a suitable 4-vertex contour with valid aspect ratio and angles.")
         return None
 
     # Return the 4 corner points of the contour
-    # Reshape points to be a simple list of (x, y) tuples/lists
     points = found_strip_contour_points.reshape(4, 2)
     print(f"Detected strip contour points: {points.tolist()}")
-    return points.astype(np.float32) # Ensure float32 for perspective transform
+    return points.astype(np.float32)
 
 def align_strip(img, strip_points):
     print("Aligning strip...")
