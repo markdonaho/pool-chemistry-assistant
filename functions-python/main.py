@@ -451,34 +451,61 @@ def sample_pad_color(img, center, pad_height, default_sample_fraction=0.5, min_s
 
 # --- Color Matching Function ---
 def match_color(sampled_lab, parameter_key):
-    # parameter_key is e.g., COLOR_KEY["pH"]
-
     if sampled_lab is None:
-        return {"value": None, "is_normal": None, "error": "Invalid sample color"}
+        # Keep original error message for internal sampling failure
+        return {"value": None, "distance": None, "error": "Invalid sample color"}
 
-    # Find the closest color in the key using Euclidean distance in LAB space
-    min_dist = float('inf')
-    closest_match = None
+    if not parameter_key:
+        return {"value": None, "distance": None, "error": "Color key is empty"}
 
+    # Calculate distances to all key entries
+    distances = []
     for entry in parameter_key:
         key_lab = np.array(entry["lab"])
         dist = np.linalg.norm(np.array(sampled_lab) - key_lab)
+        distances.append({"entry": entry, "distance": dist})
 
-        if dist < min_dist:
-            min_dist = dist
-            closest_match = entry
+    # Sort by distance
+    distances.sort(key=lambda x: x["distance"])
 
-    if closest_match:
-        matched_value = closest_match["value"]
-        print(f"Closest match found: Value={matched_value}, LAB={closest_match['lab']}, Distance={min_dist:.2f}")
-        # Basic interpolation (needs improvement)
-        # Find the two closest points for potential interpolation
-        # This requires sorting the key by LAB distance or value first.
-        # For now, just return the closest discrete value.
-        return {"value": matched_value, "distance": min_dist}
-    else:
-        print("Could not find any color match.")
-        return {"value": None, "is_normal": None, "error": "No color match found"}
+    # Handle cases based on number of entries found
+    if not distances:
+        # Should not happen if parameter_key was not empty, but defensive check
+        return {"value": None, "distance": None, "error": "No color match found"}
+
+    match1 = distances[0]
+    dist1 = match1["distance"]
+
+    # Case 1: Exact or very close match to the first entry
+    if dist1 < 1e-6:
+        print(f"Exact match found: Value={match1['entry']['value']}, LAB={match1['entry']['lab']}")
+        return {"value": match1['entry']['value'], "distance": dist1}
+
+    # Case 2: Only one entry in the key
+    if len(distances) == 1:
+        print(f"Only one key entry. Closest match: Value={match1['entry']['value']}, LAB={match1['entry']['lab']}, Distance={dist1:.2f}")
+        # Optional: Add a threshold check here if needed (e.g., if dist1 > some_max_dist, return error)
+        return {"value": match1['entry']['value'], "distance": dist1}
+
+    # Case 3: Two or more entries, perform interpolation
+    match2 = distances[1]
+    dist2 = match2["distance"]
+
+    # Safety check for zero total distance (if key points are identical)
+    total_dist = dist1 + dist2
+    if total_dist < 1e-6:
+        print(f"Warning: Closest two key points are identical? Using first match: Value={match1['entry']['value']}")
+        return {"value": match1['entry']['value'], "distance": dist1}
+
+    # Linear Interpolation
+    w1 = dist2 / total_dist # Weight for match1 (closer point)
+    w2 = dist1 / total_dist # Weight for match2
+    interpolated_value = w1 * match1['entry']['value'] + w2 * match2['entry']['value']
+
+    print(f"Interpolating: Match1={match1['entry']['value']} (Dist={dist1:.2f}), Match2={match2['entry']['value']} (Dist={dist2:.2f})")
+    print(f"Interpolated Value: {interpolated_value:.2f}")
+
+    return {"value": interpolated_value, "distance": dist1} # Return interpolated value and distance to nearest match
 
 # --- NEW Helper Function ---
 async def validate_token(request):
@@ -536,11 +563,13 @@ def process_test_strip(request): # <<< REMOVE async here
 
     # --- Original Function Body (remains synchronous) ---
     if 'file' not in request.files:
+        # Keep original clear message
         return make_response('No file part in the request', 400, cors_headers)
 
     file = request.files['file']
 
     if file.filename == '':
+        # Keep original clear message
         return make_response('No selected file', 400, cors_headers)
 
     if file:
@@ -555,7 +584,8 @@ def process_test_strip(request): # <<< REMOVE async here
 
             if img is None:
                 print("Error: Could not decode image.")
-                return make_response("Could not decode image", 400, cors_headers)
+                # Improved error message
+                return make_response("Invalid image file. Please upload a standard image format (JPEG, PNG).", 400, cors_headers)
 
             print(f"Image decoded successfully. Shape: {img.shape}")
 
@@ -563,13 +593,15 @@ def process_test_strip(request): # <<< REMOVE async here
             strip_points = detect_strip(img)
             if strip_points is None:
                 print("Error: Test strip not detected.")
-                return make_response("Test strip not detected", 400, cors_headers)
+                # Improved error message
+                return make_response("Test strip not detected. Please ensure the strip is placed fully within the groove and the photo is taken squarely using the box.", 400, cors_headers)
 
             # 2. Align the strip (perspective correction)
             aligned_strip, _ = align_strip(img, strip_points)
             if aligned_strip is None:
                 print("Error: Failed to align strip.")
-                return make_response("Failed to align strip", 400, cors_headers)
+                # Improved error message (less likely user fault here)
+                return make_response("Internal error: Failed to align test strip after detection. Please try again.", 500, cors_headers)
 
             # 3. Locate the individual test pads
             # Pad order corresponds to COLOR_KEY order (visually from image)
@@ -590,14 +622,17 @@ def process_test_strip(request): # <<< REMOVE async here
             pad_locations = locate_pads(aligned_strip, num_pads=num_pads)
             if pad_locations is None:
                 print("Error: Could not locate test pads.")
-                return make_response("Could not locate test pads", 400, cors_headers)
+                # Improved error message
+                return make_response("Could not locate test pads. Ensure the strip is flat, correctly placed in the groove, and lighting is even. Avoid strong shadows.", 400, cors_headers)
 
             pad_centers, pad_heights = pad_locations
 
             # Ensure we got the expected number of pads
             if len(pad_centers) != num_pads or len(pad_heights) != num_pads:
-                print(f"Error: Expected {num_pads} pads, but found {len(pad_centers)} centers and {len(pad_heights)} heights.")
-                return make_response(f"Could not locate all {num_pads} test pads accurately.", 400, cors_headers)
+                num_found = len(pad_centers) # Capture number found for message
+                print(f"Error: Expected {num_pads} pads, but found {num_found}.")
+                # Improved error message
+                return make_response(f"Located an incorrect number of test pads ({num_found} found, {num_pads} expected). Check strip placement and lighting.", 400, cors_headers)
 
             # 4. Sample color from each pad
             results = {}
@@ -610,6 +645,7 @@ def process_test_strip(request): # <<< REMOVE async here
 
                 if sampled_lab is None:
                     print(f"-> Failed to sample color for {param_name}")
+                    # Keep internal error message
                     results[param_name] = {"value": None, "is_normal": None, "error": "Sampling failed"}
                     continue
 
@@ -634,14 +670,16 @@ def process_test_strip(request): # <<< REMOVE async here
                     "sampled_lab": sampled_lab, # Include for debugging
                     "match_distance": match_result.get("distance") # Include for debugging
                 }
-                print(f"-> Matched Value: {results[param_name]['value']}, Normal: {results[param_name]['is_normal']}\n")
+                print(f"-> Matched Value: {results[param_name]['value']:.2f if results[param_name]['value'] is not None else 'N/A'}, Normal: {results[param_name]['is_normal']}\\n") # Format interpolated value
 
             print("--- Processing Complete ---")
-            return make_response(results, 200, cors_headers) # Make sure 'results' is defined before this line
+            return make_response(results, 200, cors_headers)
 
         except Exception as e:
             print(f"An unexpected error occurred: {e}")
             traceback.print_exc() # Log the full stack trace
+            # Keep generic internal server error for unexpected issues
             return make_response(f"Internal server error: {e}", 500, cors_headers)
 
+    # Keep original message
     return make_response('File not processed', 400, cors_headers) 
