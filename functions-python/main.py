@@ -122,87 +122,132 @@ def order_points(pts):
 
 def detect_strip(img):
     print("Detecting strip...")
-    img_height, img_width = img.shape[:2]
     
-    # Adjust area constraints - test strip should be a significant portion of the image
-    min_strip_area = img_height * img_width * 0.05  # Increased from 1% to 5%
-    max_strip_area = img_height * img_width * 0.50  # Reduced from 80% to 50%
+    # --- Resize image --- 
+    target_width = 800.0
+    scale = target_width / img.shape[1]
+    target_height = int(img.shape[0] * scale)
+    img_resized = cv2.resize(img, (int(target_width), target_height), interpolation=cv2.INTER_AREA)
+    print(f"Resized image to: {img_resized.shape}")
+    img_height, img_width = img_resized.shape[:2]
 
-    # 1. Convert to LAB color space to better handle lighting variations
-    lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
-    l, a, b = cv2.split(lab)
+    # --- 1. Background Segmentation (using LAB distance from White) ---
+    print("Segmenting non-white areas (background/fingers) using LAB distance...")
+    lab_img = cv2.cvtColor(img_resized, cv2.COLOR_BGR2LAB)
     
-    # 2. Apply adaptive thresholding to handle varying lighting conditions
-    thresh = cv2.adaptiveThreshold(l, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-                                 cv2.THRESH_BINARY_INV, 11, 2)
+    # Reference white point in LAB
+    white_point = np.array([100, 0, 0], dtype=np.float32) 
     
-    # 3. Apply morphological operations to clean up the image
-    kernel = np.ones((5,5), np.uint8)
-    morph = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
-    morph = cv2.morphologyEx(morph, cv2.MORPH_OPEN, kernel)
+    # Calculate distance for each pixel
+    # Reshape for easier calculation
+    pixels_lab = lab_img.reshape(-1, 3).astype(np.float32)
+    distances = np.linalg.norm(pixels_lab - white_point, axis=1)
     
-    # 4. Find contours
-    contours, _ = cv2.findContours(morph, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    # Reshape distances back into image shape
+    distance_map = distances.reshape(img_height, img_width)
+
+    # Threshold the distance map - pixels FAR from white are foreground (255)
+    distance_threshold = 50.0 
+    strip_finger_mask = np.uint8(distance_map > distance_threshold) * 255
     
-    if not contours:
-        print("No contours found.")
+    # Clean up the mask - Opening first to remove noise, then Closing to fill gaps
+    kernel_morph_small = np.ones((3,3), np.uint8) # Smaller kernel for opening
+    kernel_morph_bg = np.ones((10,10), np.uint8) 
+    strip_finger_mask_opened = cv2.morphologyEx(strip_finger_mask, cv2.MORPH_OPEN, kernel_morph_small)
+    strip_finger_mask_closed = cv2.morphologyEx(strip_finger_mask_opened, cv2.MORPH_CLOSE, kernel_morph_bg)
+
+    # Find contours in the cleaned mask (areas far from white)
+    contours_sf, _ = cv2.findContours(strip_finger_mask_closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    # Create the ROI mask: Start black, draw only the largest contour (strip/fingers) white
+    roi_mask = np.zeros(img_resized.shape[:2], dtype="uint8") # Start with all black
+    if contours_sf:
+        largest_sf_contour = max(contours_sf, key=cv2.contourArea)
+        # Check if the largest area is significant (e.g., >1% of image to avoid noise blobs)
+        if cv2.contourArea(largest_sf_contour) > (img_width * img_height * 0.01):
+            print("Largest strip/finger contour found, creating ROI mask...")
+            # Draw this largest contour filled white onto the roi_mask
+            cv2.drawContours(roi_mask, [largest_sf_contour], -1, 255, -1) # White fill
+        else:
+            print("Largest strip/finger contour is too small, likely noise. ROI mask will be empty.")
+            roi_mask = np.ones(img_resized.shape[:2], dtype="uint8") * 255 # Fallback: use full image if strip not found
+    else:
+        print("No significant strip/finger contours found from distance map. ROI mask empty.")
+        roi_mask = np.ones(img_resized.shape[:2], dtype="uint8") * 255 # Fallback: use full image
+        
+    # roi_mask should now contain only the main strip/finger area as white
+    # --- End Background Segmentation ---
+
+    # --- 2. Process within ROI (using original L-channel) ---
+    print("Processing L-channel within ROI (strip area)...")
+    l, a, b = cv2.split(lab_img) # Split the LAB image we already have
+    
+    # Apply the ROI mask to the L-channel
+    l_masked = cv2.bitwise_and(l, l, mask=roi_mask)
+
+    # --- 3. Adaptive Thresholding on Masked L-channel ---
+    # Use previous parameters (51, 1), as they might work better without the background interference
+    thresh = cv2.adaptiveThreshold(l_masked, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                                 cv2.THRESH_BINARY_INV, blockSize=51, C=1) 
+    # Important: Apply the ROI mask AGAIN after thresholding to remove noise introduced at the edges
+    thresh = cv2.bitwise_and(thresh, thresh, mask=roi_mask)
+
+    # --- 4. Morphological Operations on Thresholded Image ---
+    kernel_morph_strip = np.ones((5,5), np.uint8) # Original 5x5 kernel might be fine now
+    morph = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel_morph_strip)
+    morph = cv2.morphologyEx(morph, cv2.MORPH_OPEN, kernel_morph_strip)
+
+    # --- 5. Find Contours in Processed Image ---
+    contours_final, _ = cv2.findContours(morph, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    if not contours_final:
+        print("No final contours found after processing within ROI.")
         return None
 
-    # 5. Filter & Select Contours
-    # Sort contours by area (largest first)
-    contours = sorted(contours, key=cv2.contourArea, reverse=True)[:5]  # Check top 5 largest
+    # --- 6. Relaxed Contour Selection (within area bounds) ---
+    min_strip_area = img_height * img_width * 0.05  # 5% of resized image
+    max_strip_area = img_height * img_width * 0.50  # 50% of resized image
+    contours_final = sorted(contours_final, key=cv2.contourArea, reverse=True)[:5] # Check top 5 largest
 
     found_strip_contour_points = None
-    for c in contours:
-        area = cv2.contourArea(c)
-        if area < min_strip_area or area > max_strip_area:
-            continue
-            
-        # Approximate the contour shape
-        peri = cv2.arcLength(c, True)
-        approx = cv2.approxPolyDP(c, 0.02 * peri, True)  # Reduced epsilon for more precise shape
+    selected_contour_for_debug = None
 
-        # Check if the approximation has 4 vertices (is a quadrilateral)
-        if len(approx) == 4:
-            # Calculate bounding box and aspect ratio
-            (x, y, w, h) = cv2.boundingRect(approx)
-            aspect_ratio = float(w) / h
-            
-            # Define expected aspect ratio range (strip is typically tall and narrow)
-            min_aspect_ratio = 0.2  # Increased from 0.1
-            max_aspect_ratio = 5.0  # Reduced from 10.0
-            
-            is_valid_aspect_ratio = (aspect_ratio >= min_aspect_ratio and aspect_ratio <= max_aspect_ratio)
-            
-            print(f"Contour 4 vertices. Area: {area:.0f}, Aspect Ratio: {aspect_ratio:.2f}")
-            if is_valid_aspect_ratio:
-                # Additional check: Verify the contour is relatively straight
-                # by checking the angles between adjacent sides
-                points = approx.reshape(4, 2)
-                angles = []
-                for i in range(4):
-                    p1 = points[i]
-                    p2 = points[(i+1)%4]
-                    p3 = points[(i+2)%4]
-                    v1 = p1 - p2
-                    v2 = p3 - p2
-                    angle = np.arccos(np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2)))
-                    angles.append(np.degrees(angle))
-                
-                # Check if angles are close to 90 degrees (allowing some tolerance)
-                if all(70 <= angle <= 110 for angle in angles):
-                    found_strip_contour_points = approx
-                    print("Found potential strip contour meeting all criteria.")
-                    break
+    print("\n--- Relaxed Contour Selection (Post-BG Removal) ---")
+    for c in contours_final:
+        area = cv2.contourArea(c)
+        peri = cv2.arcLength(c, True)
+        approx = cv2.approxPolyDP(c, 0.03 * peri, True) # Epsilon from previous attempt
+
+        print(f"Checking contour: Area={area:.0f}, Vertices={len(approx)}")
+        if area >= min_strip_area and area <= max_strip_area:
+            print(">>> Found contour within area bounds. Selecting this one.")
+            found_strip_contour_points = approx 
+            selected_contour_for_debug = c 
+            break 
+        else:
+            print(f"   Area {area:.0f} outside range ({min_strip_area:.0f}-{max_strip_area:.0f}). Skipping.")
 
     if found_strip_contour_points is None:
-        print("Could not find a suitable 4-vertex contour with valid aspect ratio and angles.")
+        print("Could not find ANY contour within the specified area range (Post-BG Removal).")
         return None
 
-    # Return the 4 corner points of the contour
-    points = found_strip_contour_points.reshape(4, 2)
-    print(f"Detected strip contour points: {points.tolist()}")
-    return points.astype(np.float32)
+    # Fallback logic if approx does not have 4 vertices
+    if len(found_strip_contour_points) != 4:
+        print(f"Warning: Selected contour approximation has {len(found_strip_contour_points)} vertices, not 4. Falling back to bounding rectangle for alignment.")
+        x, y, w, h = cv2.boundingRect(selected_contour_for_debug) 
+        points = np.array([
+            [x, y],
+            [x + w, y],
+            [x + w, y + h],
+            [x, y + h]
+        ], dtype=np.float32)
+        print(f"Detected strip approx points (from bounding box): {points.tolist()}")
+        return points
+    else:
+        # Original logic if we found 4 points
+        points = found_strip_contour_points.reshape(4, 2)
+        print(f"Detected strip approx points (vertices={len(found_strip_contour_points)}): {points.tolist()}")
+        return points.astype(np.float32)
 
 def align_strip(img, strip_points):
     print("Aligning strip...")
@@ -253,11 +298,11 @@ def locate_pads(aligned_img, num_pads=7):
         gray = aligned_img
 
     # --- Parameters for Hough Line Transform ---
-    rho = 1             # Distance resolution of the accumulator in pixels
-    theta = np.pi / 180 # Angle resolution of the accumulator in radians
-    threshold = 50     # Accumulator threshold parameter. Only lines > threshold are returned.
-    min_line_length = 50 # Minimum line length. Line segments shorter than this are rejected.
-    max_line_gap = 10    # Maximum allowed gap between points on the same line to link them.
+    rho = 1
+    theta = np.pi / 180
+    threshold = 60     # Increased from 50
+    min_line_length = 40 # Decreased from 50
+    max_line_gap = 10    # Kept at 10
     # --- End Parameters ---
 
     # Enhance edges specifically for horizontal/vertical lines if needed
@@ -268,8 +313,8 @@ def locate_pads(aligned_img, num_pads=7):
     # abs_grad_y = cv2.convertScaleAbs(grad_y)
     # edges = cv2.addWeighted(abs_grad_x, 0.5, abs_grad_y, 0.5, 0) # Combine gradients
     
-    # Or stick with Canny if it works well
-    edges = cv2.Canny(gray, 50, 150, apertureSize=3)
+    # Use Canny edge detection with adjusted thresholds
+    edges = cv2.Canny(gray, 30, 100, apertureSize=3) # Lowered thresholds from 50, 150
 
     # Detect lines using Hough Line Transform
     lines = cv2.HoughLinesP(edges, rho, theta, threshold, np.array([]),
